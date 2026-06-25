@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -25,29 +24,25 @@ pub fn build_client() -> Result<reqwest::Client> {
         .context("Building HTTP client")
 }
 
-pub async fn upload_file(
+/// 読み込み済みバイト列をアップロードする。
+/// (ファイルの read は呼び出し側の `FileSource` が担い、ここは FS / SMB に依存しない)
+pub async fn upload_bytes(
     client: &reqwest::Client,
     url: &str,
-    path: &Path,
+    filename: &str,
+    bytes: &[u8],
     token: &str,
 ) -> Result<()> {
-    let bytes = tokio::fs::read(path)
-        .await
-        .with_context(|| format!("Reading file {}", path.display()))?;
+    let filename = filename.to_string();
 
-    let filename = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "unknown".to_string());
-
-    let mime = mime_guess::from_path(path)
+    let mime = mime_guess::from_path(&filename)
         .first_or_octet_stream()
         .to_string();
 
     let body = CreateFileRequest {
         filename: filename.clone(),
         file_type: mime,
-        content: STANDARD.encode(&bytes),
+        content: STANDARD.encode(bytes),
     };
 
     let response = client

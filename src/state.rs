@@ -101,25 +101,25 @@ pub fn failed_list_path(state_file: &Path) -> PathBuf {
     state_file.with_file_name("failed_files.txt")
 }
 
-/// Load the list of previously failed file paths.
-pub fn load_failed_list(path: &Path) -> Result<Vec<PathBuf>> {
+/// Load the list of previously failed file ids (local path or SMB-relative path).
+pub fn load_failed_list(path: &Path) -> Result<Vec<String>> {
     if !path.exists() {
         return Ok(vec![]);
     }
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Reading failed list {}", path.display()))?;
-    let paths = content
+    let ids = content
         .lines()
         .map(|l| l.trim())
         .filter(|l| !l.is_empty())
-        .map(PathBuf::from)
+        .map(|l| l.to_string())
         .collect();
-    Ok(paths)
+    Ok(ids)
 }
 
-/// Save the list of failed file paths, overwriting the previous list.
+/// Save the list of failed file ids, overwriting the previous list.
 /// Passing an empty slice deletes the file.
-pub fn save_failed_list(path: &Path, failed: &[PathBuf]) -> Result<()> {
+pub fn save_failed_list(path: &Path, failed: &[String]) -> Result<()> {
     if failed.is_empty() {
         if path.exists() {
             std::fs::remove_file(path)
@@ -136,12 +136,7 @@ pub fn save_failed_list(path: &Path, failed: &[PathBuf]) -> Result<()> {
         }
     }
 
-    let content = failed
-        .iter()
-        .map(|p| p.to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n";
+    let content = failed.join("\n") + "\n";
 
     std::fs::write(path, content)
         .with_context(|| format!("Writing failed list {}", path.display()))?;

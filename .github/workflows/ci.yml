@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Build + Test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci"
+
+      - uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Build + test
+        run: |
+          cargo build --all-targets
+          cargo test
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          # build.rs が空文字 fallback するので未設定でも compile は通るが、
+          # 投入済みなら焼き込む。
+          DEFAULT_GOOGLE_CLIENT_ID: ${{ secrets.DEFAULT_GOOGLE_CLIENT_ID }}
+          DEFAULT_GOOGLE_CLIENT_SECRET: ${{ secrets.DEFAULT_GOOGLE_CLIENT_SECRET }}
+
+  # main への merge (push) で musl static binary を build → Cloudflare Tunnel SSH
+  # 経由で LAN 内 Linux ホストへ自動 deploy する (Issue #1 Phase 4/5、docker 不使用)。
+  # GitHub Actions runner は LAN / Tailscale 網に居ないので、cloudflared access ssh
+  # を ProxyCommand にした SSH で到達し CF Access service token で認証する。
+  # deploy ロジックは手動 deploy.sh と scripts/deploy-remote.sh を共有する。
+  deploy:
+    name: Deploy to LAN host (CF Tunnel SSH)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci"
+
+      - uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install musl toolchain
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build musl release binary
+        run: cargo build --release --target x86_64-unknown-linux-musl
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          DEFAULT_GOOGLE_CLIENT_ID: ${{ secrets.DEFAULT_GOOGLE_CLIENT_ID }}
+          DEFAULT_GOOGLE_CLIENT_SECRET: ${{ secrets.DEFAULT_GOOGLE_CLIENT_SECRET }}
+
+      - name: Install cloudflared
+        run: |
+          curl -fsSL \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+            -o /tmp/cloudflared
+          sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
+          cloudflared --version
+
+      - name: Write deploy SSH key
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Deploy over Cloudflare Tunnel SSH
+        env:
+          DEPLOY_SSH_HOST: ${{ vars.DEPLOY_SSH_HOST }}
+          DEPLOY_SSH_PROXY_COMMAND: "cloudflared access ssh --hostname %h"
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          EXPECTED_BUILD_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$DEPLOY_SSH_HOST" ]; then
+            echo "::error::vars.DEPLOY_SSH_HOST is not set — configure repo/org variable" >&2
+            exit 1
+          fi
+          # github.sha は 40 文字。build.rs は GITHUB_SHA の先頭 7 文字を焼き込むので合わせる。
+          export EXPECTED_BUILD_SHA="${EXPECTED_BUILD_SHA:0:7}"
+          # ~ は env で展開されないので $HOME で絶対 path 化する。
+          export DEPLOY_SSH_KEY_FILE="$HOME/.ssh/deploy_key"
+          bash scripts/deploy-remote.sh
+
+  # CI green 後に squash auto-merge を queue する (org 標準の caller-composed pattern、
+  # rust-ichibanboshi / dtako-scraper と同形)。deploy job は push (merge 後) のみ走るので
+  # auto-merge (PR run) とは排他 = merge -> branch 削除で deploy が cancel される race は
+  # 起きない。auto-merge.yml の deploy gate 静的検査は DAG だけ見て trigger 排他を判別
+  # できず deploy を needs 未配線として loud fail するので deploy_gate_ignore で除外する。
+  auto-merge:
+    if: github.event_name == 'pull_request'
+    needs: [test]
+    uses: ippoan/ci-workflows/.github/workflows/auto-merge.yml@main
+    with:
+      deploy_gate_ignore: 'deploy'
+    # auto-merge.yml は GitHub App credential (CI_APP_ID / CI_APP_PRIVATE_KEY) 必須。
+    # reusable が **別 org (ippoan)** にあるため `secrets: inherit` は効かない
+    # (inherit は同一 org / enterprise 内の reusable にしか渡さない)。ohishi-exp org
+    # secret を named secret として明示的に渡す。
+    secrets:
+      CI_APP_ID: ${{ secrets.CI_APP_ID }}
+      CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
+    permissions:
+      contents: write
+      pull-requests: write

@@ -2,16 +2,21 @@ mod auth;
 mod cli;
 mod google_auth;
 mod scanner;
+#[cfg(windows)]
 mod smb;
+#[cfg(not(windows))]
+mod smb_fs;
+mod source;
 mod state;
 mod uploader;
 
 use anyhow::Result;
 use clap::Parser;
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::time::SystemTime;
 use tracing::{info, warn};
+
+use crate::source::{file_name_of, FileSource};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -26,36 +31,25 @@ async fn main() -> Result<()> {
 
     let scan_start = SystemTime::now();
 
-    if let Some(local_path) = &config.local_path {
-        info!("Local mode: monitoring {}", local_path.display());
-        run(&config, local_path, scan_start).await
-    } else {
-        if config.smb_user.is_none() || config.smb_pass.is_none() {
-            anyhow::bail!(
-                "--smb-user and --smb-pass (or SMB_USER/SMB_PASS env vars) are required for SMB mode. \
-                 Use --local-path for local mode."
-            );
-        }
-        let mount = smb::SmbMount::mount(&config)?;
-        let scan_path = PathBuf::from(format!("{}\\{}", mount.drive_letter, config.smb_path));
-        let result = run(&config, &scan_path, scan_start).await;
-
-        if let Err(e) = mount.unmount() {
-            warn!("Failed to unmount SMB share: {:#}", e);
-        }
-
-        result
-    }
+    let mut source = FileSource::open(&config).await?;
+    let result = run(&config, &mut source, scan_start).await;
+    source.close().await;
+    result
 }
 
-async fn run(config: &cli::Config, scan_root: &std::path::Path, scan_start: SystemTime) -> Result<()> {
+async fn run(config: &cli::Config, source: &mut FileSource, scan_start: SystemTime) -> Result<()> {
     let failed_list_path = state::failed_list_path(&config.state_file);
 
-    // 1. Load previously failed files (retry candidates)
-    let mut retry_candidates = state::load_failed_list(&failed_list_path)?;
-    if !retry_candidates.is_empty() {
-        info!("{} file(s) pending retry from previous run", retry_candidates.len());
-        retry_candidates.retain(|p| p.exists());
+    // 1. Load previously failed files (retry candidates), pruning ones that no longer exist.
+    let prev_failed = state::load_failed_list(&failed_list_path)?;
+    let mut retry_candidates: Vec<String> = Vec::new();
+    if !prev_failed.is_empty() {
+        info!("{} file(s) pending retry from previous run", prev_failed.len());
+        for id in prev_failed {
+            if source.exists(&id).await {
+                retry_candidates.push(id);
+            }
+        }
     }
 
     // 2. Resolve "since" threshold
@@ -65,36 +59,36 @@ async fn run(config: &cli::Config, scan_root: &std::path::Path, scan_start: Syst
     } else {
         state::read_last_run(&config.state_file)?
     };
-    info!("Scanning: {}", scan_root.display());
 
-    let changed_files = scanner::find_changed_files(scan_root, since)?;
+    let changed = scanner::find_changed_files(source, since).await?;
 
     // 3. Merge: changed files + retries, deduplicated
-    let retry_set: HashSet<PathBuf> = retry_candidates.into_iter().collect();
-    let mut all_files: Vec<PathBuf> = changed_files;
-    for p in &retry_set {
-        if !all_files.contains(p) {
-            info!("Adding retry: {}", p.display());
-            all_files.push(p.clone());
+    let retry_set: HashSet<String> = retry_candidates.into_iter().collect();
+    let mut all_ids: Vec<String> = changed.into_iter().map(|e| e.id).collect();
+    for id in &retry_set {
+        if !all_ids.contains(id) {
+            info!("Adding retry: {}", id);
+            all_ids.push(id.clone());
         }
     }
 
-    let files_found = all_files.len();
-    info!("Found {} file(s) to process ({} new/changed + {} retries)",
+    let files_found = all_ids.len();
+    info!(
+        "Found {} file(s) to process ({} new/changed + {} retries)",
         files_found,
         files_found - retry_set.len().min(files_found),
         retry_set.len().min(files_found),
     );
 
     let mut uploaded = 0usize;
-    let mut new_failed: Vec<PathBuf> = Vec::new();
+    let mut new_failed: Vec<String> = Vec::new();
 
     if files_found == 0 {
         info!("No files to process");
     } else if config.dry_run {
         info!("Dry run mode: skipping uploads");
-        for path in &all_files {
-            info!("  Would upload: {}", path.display());
+        for id in &all_ids {
+            info!("  Would upload: {}", id);
         }
     } else {
         let client = uploader::build_client()?;
@@ -104,7 +98,8 @@ async fn run(config: &cli::Config, scan_root: &std::path::Path, scan_start: Syst
             &client,
             &config.google_client_id,
             &config.google_client_secret,
-        ).await?;
+        )
+        .await?;
 
         let auth_url = format!("{}/api/auth/google", config.alc_api_url.trim_end_matches('/'));
         let (token, tenant_id) = auth::login_with_google(&client, &auth_url, &id_token).await?;
@@ -112,13 +107,24 @@ async fn run(config: &cli::Config, scan_root: &std::path::Path, scan_start: Syst
 
         let upload_url = format!("{}/api/files", config.alc_api_url.trim_end_matches('/'));
 
-        for (i, path) in all_files.iter().enumerate() {
-            info!("Uploading {}/{}: {}", i + 1, files_found, path.display());
-            match uploader::upload_file(&client, &upload_url, path, &token).await {
-                Ok(()) => uploaded += 1,
+        for (i, id) in all_ids.iter().enumerate() {
+            info!("Uploading {}/{}: {}", i + 1, files_found, id);
+            let filename = file_name_of(id);
+            match source.read(id).await {
+                Ok(bytes) => {
+                    match uploader::upload_bytes(&client, &upload_url, &filename, &bytes, &token)
+                        .await
+                    {
+                        Ok(()) => uploaded += 1,
+                        Err(e) => {
+                            warn!("Failed: {}: {:#}", id, e);
+                            new_failed.push(id.clone());
+                        }
+                    }
+                }
                 Err(e) => {
-                    warn!("Failed: {}: {:#}", path.display(), e);
-                    new_failed.push(path.clone());
+                    warn!("Failed to read {}: {:#}", id, e);
+                    new_failed.push(id.clone());
                 }
             }
         }

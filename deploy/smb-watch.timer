@@ -1,0 +1,13 @@
+[Unit]
+Description=smb-watch を定期実行する (旧 Windows タスクスケジューラの毎時相当)
+
+[Timer]
+# 毎時実行。マシン停止中に逃した分は起動後にまとめて 1 回走る (Persistent)。
+OnCalendar=hourly
+Persistent=true
+# 複数ホストでの同時刻集中を避けるためのランダム遅延 (最大 5 分)。
+RandomizedDelaySec=300
+Unit=smb-watch.service
+
+[Install]
+WantedBy=timers.target

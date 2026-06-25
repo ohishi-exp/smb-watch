@@ -1,0 +1,12 @@
+[Unit]
+Description=smb-watch binary の更新を検知して即時 1 回実行する (deploy 後の自動反映)
+
+[Path]
+# deploy (scripts/deploy-remote.sh) が /opt/smb-watch/smb-watch を mv で差し替えると
+# PathModified が発火し smb-watch.service (oneshot) を 1 回起動する。
+# これにより「deploy → 次の timer 発火を待たずに新 binary で 1 回走る」を実現する。
+PathModified=/opt/smb-watch/smb-watch
+Unit=smb-watch.service
+
+[Install]
+WantedBy=multi-user.target
