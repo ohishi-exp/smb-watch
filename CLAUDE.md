@@ -209,6 +209,51 @@ one-time セットアップ:
 > SMB 資格情報（`SMB_USER` / `SMB_PASS` 等）は host の `/etc/smb-watch/smb-watch.env` に
 > だけ置き、GitHub Actions / workflow YAML には載せない（資格情報は host boundary に閉じる）。
 
+### ohishi-data 運用メモ（実機の確定事項・次回の参考）
+
+本番ホスト `ohishi-data`（ubuntu）で実際に確認・確定した事項。同種の作業をする時の前提。
+
+- **host TZ = UTC**（`systemctl list-timers` が全部 UTC 表示で確認）。**変更しない**。
+  時刻依存の業務 cron（`/etc/cron.d/` の `backup` / `update_ichi`）があり、`timedatectl
+  set-timezone` するとそれらが 9h ずれるため。JST スケジュールは **timer 側を UTC で記述**して表現する
+  （JST 9〜17 時 = UTC 0〜8 時、曜日も Mon-Fri で一致 → `OnCalendar=Mon-Fri *-*-* 00..08:00:00`）。
+- **systemd 245**（Ubuntu 20.04）。`OnCalendar` の TZ 接尾辞（`... Asia/Tokyo`）は **v252+ 必須**で使えない。
+  なので「host TZ で解釈される」前提を崩さず、UTC 記述で JST を表現する（上記）。
+- **systemd unit file は CI deploy では更新されない**（deploy job は binary だけを `/opt/smb-watch/`
+  に置く）。`*.timer` / `*.service` / `*.path` を変えたら **ホスト上で手動反映**が要る。
+  clone せず public repo の raw から 1 ファイルだけ取るのが楽:
+  ```sh
+  sudo curl -fsSL https://raw.githubusercontent.com/ohishi-exp/smb-watch/main/deploy/smb-watch.timer \
+    -o /etc/systemd/system/smb-watch.timer
+  sudo systemctl daemon-reload && sudo systemctl restart smb-watch.timer
+  systemctl list-timers smb-watch.timer --no-pager   # NEXT が UTC 00〜08 時台(=JST 9〜17時)の平日か
+  ```
+- **手動 1 回実行**は `sudo systemctl start smb-watch.service`（oneshot なので start が完走まで待って返る）。
+  直後に `sudo tail -n3 /var/lib/smb-watch/last_run.txt` で `... found uploaded failed ok` を確認。
+- **watermark = `/var/lib/smb-watch/last_run.txt`**（service の `WorkingDirectory`）。最終行の start ts を
+  `since` に使う（`dry-run`/`ok`/`seed` の status で区別せず、最終行を読む）。**dry-run でも watermark は
+  進む**ので注意（dry-run 後に通常 run しても、dry-run 時点以前のファイルは拾われない）。初回 backfill は
+  `--since <古い時刻>` で明示。`seed` 行を手で入れて起点を固定する運用も可。
+- **このコンテナ（CCoW）からは ohishi-data へ SSH 不可**（egress TCP/443 のみ、cloudflared の UDP 7844 /
+  Tailscale 不達）。host 上の操作（pairing 実行・systemd 反映・手動 run）は **operator が実機で叩く**。
+
+### device pairing（headless、実機手順）
+
+box（ohishi-data）で完結する pairing（auth-worker `/device/pair/*`、ippoan/auth-worker#298）:
+
+```sh
+sudo /opt/smb-watch/smb-watch pair --label ohishi-data --env-out /etc/smb-watch/smb-watch.env
+# → 承認 URL + 確認コードが表示される
+#   operator がブラウザで URL を開き auth.ippoan.org にログイン(= tenant 確定) → 確認コード一致を確認 → 承認
+#   box が poll で credential を受領し env ファイルへ自動追記 (mode 600、device_secret は画面/log に出ない)
+```
+
+- 承認画面でログインするアカウントの **tenant が、carins にアップロードしたいデータの tenant と一致**する必要がある
+  （approve したセッションの tenant_id が credential に焼かれ、carins が X-Tenant-ID として rust-alc-api に注入する）。
+- 失効・端末退役は auth-worker `/device/revoke`。再 pairing は同じ `pair` コマンドをもう一度。
+- 動作実績（2026-06-25）: pairing 成功 → 通常 run で 2 件 upload 成功（device JWT → carins `/api/device-upload`
+  → introspect 検証 → rust-alc-api `/api/files`）まで実機疎通確認済み。
+
 ---
 
 ## インストーラー（WiX MSI）
