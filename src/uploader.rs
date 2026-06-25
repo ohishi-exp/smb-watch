@@ -1,16 +1,7 @@
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::STANDARD, Engine};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::time::Duration;
 use tracing::{info, warn};
-
-#[derive(Serialize)]
-struct CreateFileRequest {
-    filename: String,
-    #[serde(rename = "type")]
-    file_type: String,
-    content: String, // base64 encoded
-}
 
 #[derive(Deserialize, Debug)]
 pub struct UploadResponse {
@@ -24,7 +15,9 @@ pub fn build_client() -> Result<reqwest::Client> {
         .context("Building HTTP client")
 }
 
-/// 読み込み済みバイト列をアップロードする。
+/// 読み込み済みバイト列を carins `/api/device-upload` に multipart で送る (Phase 2)。
+/// `token` は auth-worker 発行の device JWT (Bearer)。carins が introspect 検証し
+/// 検証済 tenant_id を X-Tenant-ID として rust-alc-api に注入する。
 /// (ファイルの read は呼び出し側の `FileSource` が担い、ここは FS / SMB に依存しない)
 pub async fn upload_bytes(
     client: &reqwest::Client,
@@ -39,16 +32,16 @@ pub async fn upload_bytes(
         .first_or_octet_stream()
         .to_string();
 
-    let body = CreateFileRequest {
-        filename: filename.clone(),
-        file_type: mime,
-        content: STANDARD.encode(bytes),
-    };
+    let part = reqwest::multipart::Part::bytes(bytes.to_vec())
+        .file_name(filename.clone())
+        .mime_str(&mime)
+        .with_context(|| format!("building multipart part for {}", filename))?;
+    let form = reqwest::multipart::Form::new().part("file", part);
 
     let response = client
         .post(url)
         .bearer_auth(token)
-        .json(&body)
+        .multipart(form)
         .send()
         .await
         .with_context(|| format!("POST to {}", url))?;

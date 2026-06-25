@@ -1,6 +1,5 @@
-mod auth;
 mod cli;
-mod google_auth;
+mod device_auth;
 mod scanner;
 #[cfg(windows)]
 mod smb;
@@ -93,19 +92,23 @@ async fn run(config: &cli::Config, source: &mut FileSource, scan_start: SystemTi
     } else {
         let client = uploader::build_client()?;
 
-        // Google Device Flow → rust-alc-api で認証
-        let id_token = google_auth::device_flow_get_id_token(
-            &client,
-            &config.google_client_id,
-            &config.google_client_secret,
-        )
-        .await?;
+        // device credential → auth-worker /device/token で短命 device JWT を取得 (Phase 2)。
+        let device_id = config.device_id.as_deref().filter(|s| !s.is_empty());
+        let device_secret = config.device_secret.as_deref().filter(|s| !s.is_empty());
+        let (device_id, device_secret) = match (device_id, device_secret) {
+            (Some(i), Some(s)) => (i, s),
+            _ => anyhow::bail!(
+                "--device-id and --device-secret (or SMB_WATCH_DEVICE_ID/SMB_WATCH_DEVICE_SECRET) \
+                 are required for upload. Pair the device via auth-worker /device/pair, \
+                 or use --dry-run to scan without uploading."
+            ),
+        };
 
-        let auth_url = format!("{}/api/auth/google", config.alc_api_url.trim_end_matches('/'));
-        let (token, tenant_id) = auth::login_with_google(&client, &auth_url, &id_token).await?;
+        let (token, tenant_id) =
+            device_auth::get_device_jwt(&client, &config.auth_url, device_id, device_secret).await?;
         info!("Authenticated: tenant_id={}", tenant_id);
 
-        let upload_url = format!("{}/api/files", config.alc_api_url.trim_end_matches('/'));
+        let upload_url = format!("{}/api/device-upload", config.upload_url.trim_end_matches('/'));
 
         for (i, id) in all_ids.iter().enumerate() {
             info!("Uploading {}/{}: {}", i + 1, files_found, id);

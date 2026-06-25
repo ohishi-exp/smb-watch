@@ -39,30 +39,30 @@ uploader (read → アップロード) が同一 interface でローカル FS / 
 | `--smb-user` | - | `SMB_USER` |
 | `--smb-pass` | - | `SMB_PASS` |
 | `--smb-domain` | `` | `SMB_DOMAIN` |
-| `--upload-url` | `https://nuxt-pwa-carins.mtamaramu.com` | `UPLOAD_URL` |
-| `--auth-user` | - | `SMB_WATCH_AUTH_USER` |
-| `--auth-pass` | - | `SMB_WATCH_AUTH_PASS` |
-| `--auth-url` | - | `SMB_WATCH_AUTH_URL` |
-| `--organization-id` | - | `ORGANIZATION_ID` |
+| `--device-id` | - | `SMB_WATCH_DEVICE_ID` |
+| `--device-secret` | - | `SMB_WATCH_DEVICE_SECRET` |
+| `--auth-url` | `https://auth.ippoan.org` | `SMB_WATCH_AUTH_URL` |
+| `--upload-url` | `https://carins.ippoan.org` | `SMB_WATCH_UPLOAD_URL` |
 | `--drive-letter` | `Z:` | - |
 | `--dry-run` | `false` | - |
 
-アップロード先エンドポイント: `POST /api/recieve` (multipart/form-data)
+### 認証 (Phase 2 / 案B、device-token)
 
-`--auth-user`, `--auth-pass`, `--auth-url` を全て指定すると、Worker (`smb-upload-worker`) 経由の JWT 認証付きアップロードに切り替わる。3 つとも指定するか、全て省略するかのどちらか。
+Google device flow は撤去済み（refresh_token 失効で無人運用が詰まる事故の根治）。
+代わりに **auth-worker 発行の device-token** を使う:
 
-### 組織選択（Google OAuth モード）
+1. **pairing (初回のみ・browser)**: operator が auth-worker `/device/pair` で device credential
+   (`device_id` + `device_secret`) を発行 → `/etc/smb-watch/smb-watch.env` に 600 で保管。
+   `device_secret` は再取得不可。
+2. **runtime (無人)**: smb-watch が `--auth-url`/device credential で auth-worker
+   `POST /device/token` を叩き、短命 device JWT を取得（Google 不要）。
+3. その JWT を Bearer で carins `POST {--upload-url}/api/device-upload` に multipart upload。
+   carins が auth-worker introspect で検証 → 検証済 tenant_id を X-Tenant-ID として
+   rust-alc-api に注入する（box は tenant を詐称できない）。
 
-Google OAuth 認証時、ユーザーが複数の組織に所属している場合は対話的に選択を求める。
-選択結果は `organization_config.json` に保存され、次回以降は自動で使用される。
-
-**組織ID解決の優先順位:**
-1. `--organization-id` CLI / `ORGANIZATION_ID` env var
-2. `organization_config.json`（端末保存）
-3. サーバーから組織一覧取得 → 複数なら対話的選択
-4. JWT内のデフォルト組織
-
-組織設定をリセットするには `organization_config.json` を削除する。
+device credential が未設定（`--device-id`/`--device-secret` 両方）だと upload は loud fail する。
+`--dry-run` は SMB 走査のみで認証・upload をスキップ（接続確認用）。失効・端末退役時は
+auth-worker `/device/revoke` で即無効化できる。
 
 ---
 
@@ -161,8 +161,8 @@ service token** で LAN 内ホストへ到達する。
 ### バージョン焼き込み（`build.rs`）
 
 `BUILD_SHA`（`GITHUB_SHA` or `git rev-parse --short HEAD`）/ `BUILD_TIME` を焼き込み、
-`smb-watch --version` で出力する（deploy 検証用）。`DEFAULT_GOOGLE_CLIENT_ID/SECRET` は
-未設定でも空文字 fallback するので secret 無しでも build / test は通る。
+`smb-watch --version` で出力する（deploy 検証用）。Phase 2 で device-token に移行したため
+binary に焼き込む secret は無い（device credential は host の `/etc/smb-watch/smb-watch.env`）。
 
 ### 必要な GitHub secrets / variables（rust-ichibanboshi に準拠）
 
@@ -171,7 +171,6 @@ service token** で LAN 内ホストへ到達する。
 | `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` | secret | CF Access service token（SSH 経路認証） |
 | `DEPLOY_SSH_KEY` | secret | CI 専用 SSH 秘密鍵（host の `authorized_keys` に公開鍵登録） |
 | `DEPLOY_SSH_HOST` | variable | CF Tunnel SSH ingress hostname（例: `ssh-smb-watch.mtamaramu.com`） |
-| `DEFAULT_GOOGLE_CLIENT_ID` / `DEFAULT_GOOGLE_CLIENT_SECRET` | secret | binary に焼き込む OAuth 既定値（Phase 2 で auth-worker 方式に移行予定） |
 
 `vars.DEPLOY_SSH_HOST` 未設定なら `deploy` job は `::error` で loud fail する。
 

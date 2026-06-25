@@ -43,9 +43,13 @@ pub struct Config {
     #[arg(long, env = "SMB_DOMAIN", default_value = "")]
     pub smb_domain: String,
 
-    /// rust-alc-api のベース URL
-    #[arg(long, env = "ALC_API_URL", default_value = "https://rust-alc-api-566bls5vfq-an.a.run.app")]
-    pub alc_api_url: String,
+    /// auth-worker のベース URL (device JWT 発行 `/device/token`)
+    #[arg(long, env = "SMB_WATCH_AUTH_URL", default_value = "https://auth.ippoan.org")]
+    pub auth_url: String,
+
+    /// アップロード先 carins のベース URL (`/api/device-upload`)
+    #[arg(long, env = "SMB_WATCH_UPLOAD_URL", default_value = "https://carins.ippoan.org")]
+    pub upload_url: String,
 
     /// Path to state file storing last run timestamp
     #[arg(long, default_value = "last_run.txt")]
@@ -68,22 +72,13 @@ pub struct Config {
     #[arg(long, value_name = "DATETIME", value_parser = parse_since)]
     pub since: Option<DateTime<Utc>>,
 
-    /// Google OAuth 2.0 Client ID (Device Flow 認証用)
-    #[arg(
-        long,
-        env = "GOOGLE_CLIENT_ID",
-        default_value = env!("DEFAULT_GOOGLE_CLIENT_ID"),
-    )]
-    pub google_client_id: String,
+    /// device credential の ID (pairing で auth-worker から発行)
+    #[arg(long, env = "SMB_WATCH_DEVICE_ID")]
+    pub device_id: Option<String>,
 
-    /// Google OAuth 2.0 Client Secret (Device Flow トークンポーリング用)
-    #[arg(
-        long,
-        env = "GOOGLE_CLIENT_SECRET",
-        default_value = env!("DEFAULT_GOOGLE_CLIENT_SECRET"),
-        hide_env_values = true,
-    )]
-    pub google_client_secret: String,
+    /// device credential の secret (pairing で 1 度だけ取得、`/etc/smb-watch` に 600 保管)
+    #[arg(long, env = "SMB_WATCH_DEVICE_SECRET", hide_env_values = true)]
+    pub device_secret: Option<String>,
 
     /// Local directory path to monitor (enables local mode, skips SMB mount)
     #[arg(long, value_name = "PATH")]
