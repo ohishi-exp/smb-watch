@@ -103,3 +103,25 @@ jobs:
           # ~ は env で展開されないので $HOME で絶対 path 化する。
           export DEPLOY_SSH_KEY_FILE="$HOME/.ssh/deploy_key"
           bash scripts/deploy-remote.sh
+
+  # CI green 後に squash auto-merge を queue する (org 標準の caller-composed pattern、
+  # rust-ichibanboshi / dtako-scraper と同形)。deploy job は push (merge 後) のみ走るので
+  # auto-merge (PR run) とは排他 = merge -> branch 削除で deploy が cancel される race は
+  # 起きない。auto-merge.yml の deploy gate 静的検査は DAG だけ見て trigger 排他を判別
+  # できず deploy を needs 未配線として loud fail するので deploy_gate_ignore で除外する。
+  auto-merge:
+    if: github.event_name == 'pull_request'
+    needs: [test]
+    uses: ippoan/ci-workflows/.github/workflows/auto-merge.yml@main
+    with:
+      deploy_gate_ignore: 'deploy'
+    # auto-merge.yml は GitHub App credential (CI_APP_ID / CI_APP_PRIVATE_KEY) 必須。
+    # reusable が **別 org (ippoan)** にあるため `secrets: inherit` は効かない
+    # (inherit は同一 org / enterprise 内の reusable にしか渡さない)。ohishi-exp org
+    # secret を named secret として明示的に渡す。
+    secrets:
+      CI_APP_ID: ${{ secrets.CI_APP_ID }}
+      CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
+    permissions:
+      contents: write
+      pull-requests: write
