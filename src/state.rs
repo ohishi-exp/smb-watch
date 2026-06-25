@@ -9,17 +9,17 @@ use tracing::info;
 /// Read the last run timestamp from the last line of the state file.
 pub fn read_last_run(path: &Path) -> Result<SystemTime> {
     if !path.exists() {
-        info!("No state file found at {}, will upload all files", path.display());
+        info!(
+            "No state file found at {}, will upload all files",
+            path.display()
+        );
         return Ok(SystemTime::UNIX_EPOCH);
     }
 
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Reading state file {}", path.display()))?;
 
-    let last_line = content
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .last();
+    let last_line = content.lines().filter(|l| !l.trim().is_empty()).last();
 
     let last_line = match last_line {
         Some(l) => l,
@@ -141,6 +141,10 @@ pub fn save_failed_list(path: &Path, failed: &[String]) -> Result<()> {
     std::fs::write(path, content)
         .with_context(|| format!("Writing failed list {}", path.display()))?;
 
-    info!("{} file(s) remain in retry list {}", failed.len(), path.display());
+    info!(
+        "{} file(s) remain in retry list {}",
+        failed.len(),
+        path.display()
+    );
     Ok(())
 }

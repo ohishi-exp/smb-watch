@@ -1,5 +1,6 @@
 mod cli;
 mod device_auth;
+mod pair;
 mod scanner;
 #[cfg(windows)]
 mod smb;
@@ -28,6 +29,11 @@ async fn main() -> Result<()> {
         )
         .init();
 
+    // `smb-watch pair` は SMB を触らずに pairing だけ行って終了する。
+    if let Some(cli::Command::Pair(args)) = &config.command {
+        return pair::run_pair(&config.auth_url, args).await;
+    }
+
     let scan_start = SystemTime::now();
 
     let mut source = FileSource::open(&config).await?;
@@ -43,7 +49,10 @@ async fn run(config: &cli::Config, source: &mut FileSource, scan_start: SystemTi
     let prev_failed = state::load_failed_list(&failed_list_path)?;
     let mut retry_candidates: Vec<String> = Vec::new();
     if !prev_failed.is_empty() {
-        info!("{} file(s) pending retry from previous run", prev_failed.len());
+        info!(
+            "{} file(s) pending retry from previous run",
+            prev_failed.len()
+        );
         for id in prev_failed {
             if source.exists(&id).await {
                 retry_candidates.push(id);
@@ -105,10 +114,14 @@ async fn run(config: &cli::Config, source: &mut FileSource, scan_start: SystemTi
         };
 
         let (token, tenant_id) =
-            device_auth::get_device_jwt(&client, &config.auth_url, device_id, device_secret).await?;
+            device_auth::get_device_jwt(&client, &config.auth_url, device_id, device_secret)
+                .await?;
         info!("Authenticated: tenant_id={}", tenant_id);
 
-        let upload_url = format!("{}/api/device-upload", config.upload_url.trim_end_matches('/'));
+        let upload_url = format!(
+            "{}/api/device-upload",
+            config.upload_url.trim_end_matches('/')
+        );
 
         for (i, id) in all_ids.iter().enumerate() {
             info!("Uploading {}/{}: {}", i + 1, files_found, id);
