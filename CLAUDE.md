@@ -1,15 +1,33 @@
 # smb-watch
 
-SMB 共有フォルダを監視し、変更されたファイルを HTTP でアップロードする Windows 向けツール。
+SMB 共有フォルダを監視し、変更されたファイルを HTTP でアップロードするツール。
+Windows / Linux 両対応 (Issue #1 で Windows → Linux 無人運用に移行中)。
 
 ## プロジェクト概要
 
 | 項目 | 値 |
 |---|---|
-| バイナリ名 | `smb-watch.exe` |
-| ターゲット | `x86_64-pc-windows-msvc` |
+| バイナリ名 | `smb-watch` (Windows: `smb-watch.exe`) |
+| ターゲット | `x86_64-pc-windows-msvc` / `x86_64-unknown-linux-musl` |
 | 非同期ランタイム | Tokio |
 | TLS | rustls（OpenSSL 不要） |
+
+### SMB アクセス方式 (OS 別、Phase 1)
+
+ファイルソースは `src/source.rs` の `FileSource` で抽象化され、scanner (mtime 比較) と
+uploader (read → アップロード) が同一 interface でローカル FS / SMB を扱う。
+
+| 環境 | 接続方式 | 実装 |
+|---|---|---|
+| Windows | `net use` でドライブにマウント → ローカル FS として走査 | `src/smb.rs` (`#[cfg(windows)]`) |
+| Linux | pure-Rust SMB 直アクセス（cifs マウントしない） | `src/smb_fs.rs` (`#[cfg(not(windows))]`、`smb2` crate) |
+| `--local-path` | ローカルディレクトリを直接走査（両 OS フォールバック） | `src/source.rs` `LocalFs` |
+
+- `smb2` crate は no C deps / no FFI で musl static cross-compile が崩れない（選定理由は Issue #1）。
+  認証 (NTLM / dialect) が実機で合わない場合は `smb` crate (sspi ベース) へ切替える方針。
+- 実機疎通 probe: `cargo run --example smb_probe -- --smb-host ... --smb-share ... --smb-path ...`
+  （`SMB_USER` / `SMB_PASS` env、SMB と同一 LAN 内で実行）。
+- `failed_files.txt` の識別子は Linux SMB では共有ルートからの相対パス、ローカルでは絶対パス。
 
 ### 主な設定パラメータ（CLI / 環境変数）
 

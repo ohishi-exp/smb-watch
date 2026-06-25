@@ -23,6 +23,11 @@ mime_guess = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# pure-Rust SMB2/3 client (no C deps / no FFI, cross-compile friendly).
+# Linux 無人運用での SMB 直アクセス用。Windows は net use マウントを使うため不要。
+[target.'cfg(not(windows))'.dependencies]
+smb2 = "0.11"
+
 [profile.release]
 opt-level = 3
 strip = true

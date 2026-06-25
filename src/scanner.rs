@@ -1,43 +1,18 @@
 use anyhow::Result;
-use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use tracing::{info, warn};
-use walkdir::WalkDir;
+use tracing::info;
 
-pub fn find_changed_files(root: &Path, since: SystemTime) -> Result<Vec<PathBuf>> {
-    let mut changed = Vec::new();
+use crate::source::{Entry, FileSource};
 
-    for entry in WalkDir::new(root).follow_links(false) {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(e) => {
-                warn!("Skipping unreadable entry: {}", e);
-                continue;
-            }
-        };
+/// ソースを再帰列挙し、`since` より新しい (mtime > since) ファイルだけを返す。
+pub async fn find_changed_files(source: &mut FileSource, since: SystemTime) -> Result<Vec<Entry>> {
+    let mut all = source.list_files().await?;
+    all.retain(|e| e.mtime > since);
+    all.sort_by(|a, b| a.id.cmp(&b.id));
 
-        if !entry.file_type().is_file() {
-            continue;
-        }
-
-        let mtime = match entry.metadata().ok().and_then(|m| m.modified().ok()) {
-            Some(t) => t,
-            None => {
-                warn!("Cannot read mtime for {}", entry.path().display());
-                continue;
-            }
-        };
-
-        if mtime > since {
-            info!(
-                "Changed: {} (mtime: {:?})",
-                entry.path().display(),
-                mtime
-            );
-            changed.push(entry.path().to_path_buf());
-        }
+    for e in &all {
+        info!("Changed: {} (mtime: {:?})", e.id, e.mtime);
     }
 
-    changed.sort();
-    Ok(changed)
+    Ok(all)
 }
