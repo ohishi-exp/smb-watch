@@ -190,7 +190,7 @@ binary に焼き込む secret は無い（device credential は host の `/etc/s
 | unit | 役割 |
 |---|---|
 | `deploy/smb-watch.service` | oneshot。`EnvironmentFile=/etc/smb-watch/smb-watch.env`、`WorkingDirectory=/var/lib/smb-watch`（状態ファイルの置き場）、`ExecStart=/opt/smb-watch/smb-watch` |
-| `deploy/smb-watch.timer` | `OnCalendar=Mon-Fri *-*-* 09..17:00:00 Asia/Tokyo` + `Persistent=true`（平日 9〜17 時 JST を毎正時、1 日 9 回。`Asia/Tokyo` 接尾辞は systemd v252+ 必須） |
+| `deploy/smb-watch.timer` | `OnCalendar=Mon-Fri *-*-* 09..17:00:00` + `Persistent=true`（平日 9〜17 時を毎正時、1 日 9 回）。時刻は **host TZ** 基準なので JST 固定には `sudo timedatectl set-timezone Asia/Tokyo`（ohishi-data は systemd 245 = `OnCalendar` の TZ 接尾辞が使えない） |
 | `deploy/smb-watch-watcher.path` | `PathModified=/opt/smb-watch/smb-watch` → deploy 後に即 1 回 run（次の timer を待たない） |
 
 one-time セットアップ:

@@ -2,10 +2,13 @@
 Description=smb-watch を定期実行する (平日 9〜17 時、毎正時に 1 回)
 
 [Timer]
-# 平日 (月〜金) の 9:00〜17:00 JST を毎正時に実行 = 1 日 9 回 (9,10,…,17 時)。
-# 末尾の Asia/Tokyo で JST 固定 (ホスト TZ が UTC でも JST 基準。systemd v252+ が必要)。
+# 平日 (月〜金) の 9:00〜17:00 を毎正時に実行 = 1 日 9 回 (9,10,…,17 時)。
+# 時刻は **ホストのタイムゾーン**で解釈される。JST 固定にするには host TZ を
+# Asia/Tokyo にすること (`sudo timedatectl set-timezone Asia/Tokyo`)。
+# OnCalendar の TZ 接尾辞 (`... Asia/Tokyo`) は systemd v252+ でしか使えず、
+# ohishi-data は systemd 245 (Ubuntu 20.04) なので host TZ で揃える。
 # マシン停止中に逃した分は起動後にまとめて 1 回走る (Persistent)。
-OnCalendar=Mon-Fri *-*-* 09..17:00:00 Asia/Tokyo
+OnCalendar=Mon-Fri *-*-* 09..17:00:00
 Persistent=true
 # 複数ホストでの同時刻集中を避けるためのランダム遅延 (最大 5 分)。
 RandomizedDelaySec=300
