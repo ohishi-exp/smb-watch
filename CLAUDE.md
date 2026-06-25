@@ -189,7 +189,13 @@ one-time セットアップ:
 1. LAN 内 Linux ホストに `cloudflared` で SSH ingress（`ssh-smb-watch.mtamaramu.com → ssh://localhost:22`）追加
 2. CF Access app + Service Auth ポリシー（CI 専用 token のみ許可）
 3. deploy ユーザーの `~/.ssh/authorized_keys` に CI 公開鍵登録
-4. `/opt/smb-watch/`（binary）+ `/var/lib/smb-watch/`（状態）+ `/etc/smb-watch/smb-watch.env`（SMB 資格情報、`deploy/smb-watch.env.example` を元に 600）を作成
+4. `/opt/smb-watch/`（binary）+ `/var/lib/smb-watch/`（状態）+ `/etc/smb-watch/smb-watch.env`（SMB 資格情報、`deploy/smb-watch.env.example` を元に 600）を作成。
+   **`/opt/smb-watch` は deploy ユーザー（ubuntu）所有にする** — CI deploy は ubuntu で SSH し sudo を使わないため、root 所有だと `mv` が `Permission denied` で fail する（rust-ichibanboshi の `/opt/ichibanboshi` と同じ）:
+   ```sh
+   sudo mkdir -p /opt/smb-watch /var/lib/smb-watch /etc/smb-watch
+   sudo chown ubuntu:ubuntu /opt/smb-watch          # ← deploy 用に必須
+   sudo install -m600 deploy/smb-watch.env.example /etc/smb-watch/smb-watch.env  # 値を実値に編集
+   ```
 5. `deploy/*.{service,timer,path}` を `/etc/systemd/system/` に配置 → `systemctl enable --now smb-watch.timer smb-watch-watcher.path`
 
 > SMB 資格情報（`SMB_USER` / `SMB_PASS` 等）は host の `/etc/smb-watch/smb-watch.env` に
