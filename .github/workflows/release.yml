@@ -9,6 +9,54 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Linux musl static binary を build して同じ Release に添付する (Issue #1 Phase 4)。
+  # 配布物は Windows MSI と共通の tag に乗る。
+  build-linux:
+    name: Build Linux musl binary and attach to Release
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "release-linux"
+
+      - name: Install musl toolchain
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build musl release binary
+        run: cargo build --release --target x86_64-unknown-linux-musl --locked
+        env:
+          DEFAULT_GOOGLE_CLIENT_ID: ${{ secrets.DEFAULT_GOOGLE_CLIENT_ID }}
+          DEFAULT_GOOGLE_CLIENT_SECRET: ${{ secrets.DEFAULT_GOOGLE_CLIENT_SECRET }}
+
+      - name: Stage binary
+        run: |
+          install -m 0755 \
+            target/x86_64-unknown-linux-musl/release/smb-watch \
+            "smb-watch-${GITHUB_REF_NAME}-x86_64-unknown-linux-musl"
+
+      - name: Attach binary to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: smb-watch-${{ github.ref_name }}-x86_64-unknown-linux-musl
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-and-release:
     name: Build MSI and publish GitHub Release
     runs-on: windows-latest

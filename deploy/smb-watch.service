@@ -1,0 +1,19 @@
+[Unit]
+Description=smb-watch - SMB 共有を走査し変更ファイルを carins にアップロード
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# SMB 資格情報 (SMB_USER / SMB_PASS / SMB_DOMAIN) と任意の上書きを置く (600)。
+EnvironmentFile=/etc/smb-watch/smb-watch.env
+# 状態ファイル (last_run.txt / failed_files.txt / google_token_cache.json) は
+# WorkingDirectory に作られる。Phase 3 で --state-dir を入れたらそちらへ移行する。
+WorkingDirectory=/var/lib/smb-watch
+# 既定の --smb-host/share/path (172.18.21.102 / 共有 / 新車検証) が対象に一致するので
+# 追加引数は不要。変更が要れば smb-watch.env の SMB_* と合わせて調整する。
+ExecStart=/opt/smb-watch/smb-watch
+User=root
+
+[Install]
+WantedBy=multi-user.target

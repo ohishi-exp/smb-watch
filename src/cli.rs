@@ -1,8 +1,23 @@
 use chrono::{DateTime, Utc};
 use clap::Parser;
 
+/// `--version` / `-V` 出力。deploy 検証で焼き込んだ commit を確認するため
+/// BUILD_SHA / BUILD_TIME (build.rs が emit) を含める。
+pub const VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (sha ",
+    env!("BUILD_SHA"),
+    ", built ",
+    env!("BUILD_TIME"),
+    ")"
+);
+
 #[derive(Parser, Debug)]
-#[command(name = "smb-watch", about = "Monitor SMB share and upload changed files via HTTP")]
+#[command(
+    name = "smb-watch",
+    version = VERSION,
+    about = "Monitor SMB share and upload changed files via HTTP"
+)]
 pub struct Config {
     /// SMB server hostname or IP
     #[arg(long, default_value = "172.18.21.102")]
