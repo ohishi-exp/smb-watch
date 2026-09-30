@@ -1,0 +1,60 @@
+# smb-ingest: SMB 共有の新しいファイルを auth-worker 経由で取り込む cron Worker (Refs ohishi-exp/smb-watch#14)。
+#
+# ★ 外から届く口を持たない:
+#   - fetch ハンドラを持たない (src/lib.rs は #[event(scheduled)] だけ)
+#   - workers_dev = false / preview_urls = false、route / routes を書かない、env を作らない
+#   - SMB への口 (vpc_services) はトップレベルにだけ置く
+#   scripts/check-exposure.sh が CI で毎回これを検査する (陰性対照は scripts/check-exposure-test.sh)。
+# account_id は書かない (CLOUDFLARE_API_TOKEN から決まる)。
+#
+# secret (値は repo に書かない。`wrangler secret put`):
+#   SMB_USER / SMB_PASS / SMB_DOMAIN (無ければ空) / SMB_SHARE / SMB_PATH
+name = "smb-ingest"
+main = "build/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+preview_urls = false
+
+[build]
+command = "cargo install -q worker-build@0.8.7 --locked && worker-build --release"
+
+# 平日 JST 9〜17 時の毎正時 (UTC 0〜8 時)
+[triggers]
+crons = ["0 0-8 * * 1-5"]
+
+# ログに出る版の元。tag / message は deploy の --tag / --message (.github/workflows/worker-smb-ingest.yml)
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
+# VPC の Tunnel が繋がる colo の近くで動かす (rust-alc-api の workers/vein と同じ値)
+[placement]
+region = "aws:ap-northeast-3"
+
+# SMB への口。宛先の Tunnel・host:port は VPC Service 側に閉じる (コードの connect() の宛先は名目)
+[[vpc_services]]
+binding = "SMB_VPC"
+service_id = "SET_AFTER_VPC_SERVICE_CREATION"
+remote = true
+
+# 走行の状態 (watermark・lease・失敗一覧)。インスタンスは "state" の 1 つだけ
+[[durable_objects.bindings]]
+name = "SMB_INGEST_STATE"
+class_name = "SmbIngestState"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SmbIngestState"]
+
+# 取り込み先と通知先。tenant・通知の宛先は auth-worker 側 (KV) で固定
+[[services]]
+binding = "AUTH_WORKER_INGEST"
+service = "auth-worker"
+entrypoint = "SmbIngestEntrypoint"
+
+[vars]
+# 通知の 2 行目 (出所表記)。社内の名前を入れない
+SOURCE_LABEL = "新車検証 (Worker)"
+# "0" 以外は dry-run (列挙と「上げるはずの一覧」のログだけ)。本番に出た直後は dry-run のまま比較する
+DRY_RUN = "1"
+# since の初期値 (RFC3339)。保存した watermark が無い初回だけ使う。既定なし (無ければ何も上げず失敗通知)
+# INITIAL_SINCE = "2026-10-01T00:00:00+09:00"

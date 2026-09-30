@@ -1,3 +1,8 @@
 [workspace]
-members = ["logic"]
+members = ["logic", "worker"]
 resolver = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

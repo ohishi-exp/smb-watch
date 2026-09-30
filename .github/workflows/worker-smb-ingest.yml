@@ -1,5 +1,10 @@
 name: worker-smb-ingest
 
+# workers/smb-ingest (Refs #14)。
+#   - pull_request / main への push → logic の test、Worker の build・公開範囲の検査・wrangler deploy --dry-run
+#   - タグ worker-smb-ingest-v*      → 本番へ deploy (wrangler.toml のトップレベル。env は持たない)
+# タグの接頭辞は release.yml の v*.*.* に当たらない形にしている (native の MSI / musl のリリースを発火させない)。
+# account_id は書かない (CLOUDFLARE_API_TOKEN から決まる)。wrangler の出力はファイルに取り、mask してから伏せて出す。
 on:
   pull_request:
     paths:
@@ -7,12 +12,18 @@ on:
       - '.github/workflows/worker-smb-ingest.yml'
   push:
     branches: [main]
+    tags: ['worker-smb-ingest-v*']
     paths:
       - 'workers/smb-ingest/**'
       - '.github/workflows/worker-smb-ingest.yml'
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
+  # README と揃える
+  WRANGLER_VERSION: 4.144.0
 
 jobs:
   logic:
@@ -31,3 +42,86 @@ jobs:
 
       - name: Build (wasm32-unknown-unknown)
         run: cargo build --manifest-path workers/smb-ingest/Cargo.toml -p smb-ingest-logic --target wasm32-unknown-unknown
+
+  worker:
+    name: Worker build + exposure + wrangler dry-run
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/smb-ingest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Exposure check
+        run: bash scripts/check-exposure.sh worker/wrangler.toml
+
+      - name: Exposure check (negative control)
+        run: bash scripts/check-exposure-test.sh worker/wrangler.toml
+
+      # wrangler.toml の [build] command と同じ版
+      - run: cargo install -q worker-build@0.8.7 --locked
+
+      - name: worker-build --release
+        working-directory: workers/smb-ingest/worker
+        run: worker-build --release
+
+      # secret も token も要らない (build と設定の検証だけ)
+      - name: wrangler deploy --dry-run
+        working-directory: workers/smb-ingest/worker
+        run: npx -y "wrangler@${WRANGLER_VERSION}" deploy --dry-run
+
+  deploy:
+    name: deploy production
+    needs: [logic, worker]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/worker-smb-ingest-v')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: smb-ingest-deploy-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: workers/smb-ingest/worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - run: cargo install -q worker-build@0.8.7 --locked
+
+      # wrangler の出力は $RUNNER_TEMP/deploy.log に取り、伏せてから出す (ログファイルそのものは出さない)。
+      #   - 32 桁の hex (account ID): ::add-mask:: + <account> に置換
+      - name: wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          log="$RUNNER_TEMP/deploy.log"
+          status=0
+          npx -y "wrangler@${WRANGLER_VERSION}" deploy \
+            --tag "$GITHUB_REF_NAME" --message "$GITHUB_SHA" >"$log" 2>&1 || status=$?
+          # 何かを出す前に mask を登録する
+          grep -oE '[0-9A-Fa-f]{32}' "$log" | sort -u | while read -r hex; do
+            echo "::add-mask::${hex}"
+          done
+          sed -E -e 's#[A-Za-z0-9.-]+\.workers\.dev#<workers-dev>#g' -e 's#[0-9A-Fa-f]{32}#<account>#g' "$log"
+          [ "$status" = 0 ] || exit "$status"
+          # workers_dev = false なので workers.dev の URL は出ないはず (出たら公開されている)
+          if grep -qE '[A-Za-z0-9.-]+\.workers\.dev' "$log"; then
+            echo "::error::本番に workers.dev の URL が付いた (workers_dev = false のはず。直ちに止めること)"
+            exit 1
+          fi
