@@ -48,8 +48,8 @@ pub fn source_label(config: &Config) -> String {
         return truncate_utf16(&format!("ローカル {}", local.display()), MAX_NAME_UNITS);
     }
 
-    let mut label = config.smb_host.trim().to_string();
-    for seg in [config.smb_share.as_str(), config.smb_path.as_str()] {
+    let mut label = config.smb_host().trim().to_string();
+    for seg in [config.smb_share(), config.smb_path()] {
         let seg = seg.trim().trim_matches(['/', '\\']);
         if seg.is_empty() {
             continue;
@@ -193,13 +193,23 @@ mod tests {
     use super::*;
 
     /// 指示の例と同じ出所表記。const ではなく `source_label()` の出力を渡す前提。
-    const LABEL: &str = "ohishi-data 新車検証";
+    const LABEL: &str = "box-01 dir-a";
 
     fn ids(names: &[&str]) -> Vec<String> {
         names.iter().map(|s| s.to_string()).collect()
     }
 
-    /// CLI 既定値の Config を組み立てる (clap の default_value をそのまま使う)。
+    /// テスト用の SMB 接続先 (既定値は無いので毎回渡す)。
+    const SMB: [&str; 6] = [
+        "--smb-host",
+        "host-01",
+        "--smb-share",
+        "share-a",
+        "--smb-path",
+        "dir-a",
+    ];
+
+    /// 引数から Config を組み立てる。
     fn config(args: &[&str]) -> Config {
         let mut argv = vec!["smb-watch"];
         argv.extend_from_slice(args);
@@ -210,8 +220,7 @@ mod tests {
 
     #[test]
     fn source_label_is_derived_from_smb_config() {
-        assert_eq!(config(&[]).smb_path, "新車検証"); // 既定値であることの確認
-        assert_eq!(source_label(&config(&[])), "172.18.21.102/共有/新車検証");
+        assert_eq!(source_label(&config(&SMB)), "host-01/share-a/dir-a");
     }
 
     #[test]
@@ -219,13 +228,13 @@ mod tests {
         // ★ ここが const 化を防ぐ番人。設定を変えたら通知文も変わること。
         let c = config(&[
             "--smb-host",
-            "10.0.0.9",
+            "host-02",
             "--smb-share",
             "share2",
             "--smb-path",
-            "別フォルダ",
+            "dir-b",
         ]);
-        assert_eq!(source_label(&c), "10.0.0.9/share2/別フォルダ");
+        assert_eq!(source_label(&c), "host-02/share2/dir-b");
     }
 
     #[test]
@@ -236,8 +245,15 @@ mod tests {
         );
         // 共有直下を見る設定 (path 空) でも読める文字列になること。
         assert_eq!(
-            source_label(&config(&["--smb-path", ""])),
-            "172.18.21.102/共有"
+            source_label(&config(&[
+                "--smb-host",
+                "host-01",
+                "--smb-share",
+                "share-a",
+                "--smb-path",
+                ""
+            ])),
+            "host-01/share-a"
         );
     }
 
@@ -278,14 +294,14 @@ mod tests {
             55,
             53,
             &ids(&[
-                "共有/新車検証/20260807140512_長崎100か3822.json",
-                "共有/新車検証/20260706112854_長崎100え428.json",
+                "share-a/dir-a/20260807140512_長崎100か3822.json",
+                "share-a/dir-a/20260706112854_長崎100え428.json",
             ]),
         );
         assert_eq!(
             msg,
             "[carins 車検証] 失敗 2 / 成功 53\n\
-             ohishi-data 新車検証\n\
+             box-01 dir-a\n\
              20260807140512_長崎100か3822.json\n\
              20260706112854_長崎100え428.json"
         );
@@ -296,13 +312,13 @@ mod tests {
     #[test]
     fn message_for_success_only_run() {
         let msg = build_message(LABEL, 55, 55, &[]);
-        assert_eq!(msg, "[carins 車検証] 成功 55\nohishi-data 新車検証");
+        assert_eq!(msg, "[carins 車検証] 成功 55\nbox-01 dir-a");
         assert!(!msg.contains("失敗"));
     }
 
     #[test]
     fn message_uses_basename_not_full_path() {
-        let msg = build_message(LABEL, 1, 0, &ids(&["/mnt/共有/新車検証/a.json"]));
+        let msg = build_message(LABEL, 1, 0, &ids(&["/mnt/share-a/dir-a/a.json"]));
         assert!(msg.contains("a.json"));
         assert!(!msg.contains("/mnt/"));
     }
@@ -312,13 +328,15 @@ mod tests {
         // const に戻す変更が入ったら落ちる。設定由来のラベルがそのまま 2 行目に出ること。
         let label = source_label(&config(&[
             "--smb-host",
-            "10.0.0.9",
+            "host-02",
+            "--smb-share",
+            "share-a",
             "--smb-path",
-            "別フォルダ",
+            "dir-b",
         ]));
         let msg = build_message(&label, 2, 1, &ids(&["a.json"]));
-        assert_eq!(msg.lines().nth(1).unwrap(), "10.0.0.9/共有/別フォルダ");
-        assert!(!msg.contains("新車検証"));
+        assert_eq!(msg.lines().nth(1).unwrap(), "host-02/share-a/dir-b");
+        assert!(!msg.contains("dir-a"));
     }
 
     #[test]

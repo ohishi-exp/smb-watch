@@ -28,7 +28,7 @@ Linux 側は `ci.yml` の `deploy` job が `main` merge 時に musl build → SS
   変更するとバージョンアップ時に別製品として扱われる。
 - **SMB 資格情報 (`SMB_USER`/`SMB_PASS` 等) は host の `/etc/smb-watch/smb-watch.env` にだけ
   置き、GitHub Actions / workflow YAML には載せない**（host boundary に閉じる）。
-- **ohishi-data の host TZ (UTC) は変更しない**（時刻依存の業務 cron `backup`/`update_ichi` が
+- **<運用ホスト> の host TZ (UTC) は変更しない**（時刻依存の業務 cron `backup`/`update_ichi` が
   9h ずれるため）。JST スケジュールは systemd timer 側を UTC 記述で表現する。
 - device credential (`--device-id`/`--device-secret`) が未設定だと upload は loud fail する
   （想定挙動、隠さず落とす）。`--dry-run` は SMB 走査のみで認証・upload をスキップする。
@@ -39,5 +39,5 @@ Linux 側は `ci.yml` の `deploy` job が `main` merge 時に musl build → SS
 
 SMB アクセス方式 (OS 別)・設定パラメータ・device-token 認証・開発環境セットアップ・
 ローカルビルド・リリース手順・CI/CD・Linux 自動デプロイ (systemd 構成・CF Tunnel SSH・
-ohishi-data 実機運用メモ・device pairing 実機手順)・WiX MSI インストーラの詳細は
+<運用ホスト> 実機運用メモ・device pairing 実機手順)・WiX MSI インストーラの詳細は
 `smb-watch-map` skill を参照。

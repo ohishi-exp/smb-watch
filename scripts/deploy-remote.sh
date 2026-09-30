@@ -13,7 +13,7 @@
 #
 # 経路 (Tailscale 直 / Cloudflare Tunnel SSH) は env で切替える:
 #   - deploy.sh (手動 fallback)  … DEPLOY_SSH_HOST=<tailscale MagicDNS>
-#   - ci.yml deploy job (自動)   … DEPLOY_SSH_HOST=ssh-smb-watch.mtamaramu.com
+#   - ci.yml deploy job (自動)   … DEPLOY_SSH_HOST=<ssh-ingress-host>
 #                                   DEPLOY_SSH_PROXY_COMMAND="cloudflared access ssh --hostname %h"
 #                                   CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET (service token)
 #

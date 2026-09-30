@@ -1,6 +1,6 @@
 //! `smb-watch pair` — headless device pairing (Phase 2.5 / Issue #1)。
 //!
-//! ブラウザを持たない box (ohishi-data) が auth-worker から device credential を
+//! ブラウザを持たない box (<運用ホスト>) が auth-worker から device credential を
 //! 発行してもらうための RFC 8628 風フロー (auth-worker 側は #298)。
 //!
 //!   1. `POST {auth_url}/device/pair/start` で device_code(秘密) + user_code(短い) +
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn parses_approved() {
-        let body = r#"{"status":"approved","device_id":"d1","device_secret":"s1","tenant_id":"t1","label":"ohishi-data"}"#;
+        let body = r#"{"status":"approved","device_id":"d1","device_secret":"s1","tenant_id":"t1","label":"box-01"}"#;
         let outcome = parse_poll_outcome(body).unwrap();
         assert_eq!(
             outcome,
@@ -284,7 +284,7 @@ mod tests {
                 device_id: "d1".into(),
                 device_secret: "s1".into(),
                 tenant_id: "t1".into(),
-                label: "ohishi-data".into(),
+                label: "box-01".into(),
             })
         );
     }

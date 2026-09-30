@@ -2,7 +2,7 @@
 
 ## Context
 
-smb-watch から `nuxt-pwa-carins.mtamaramu.com/api/recieve` にアップロードすると Cloudflare Access (Zero Trust) でブロックされる。
+smb-watch から `<carins-host>/api/recieve` にアップロードすると Cloudflare Access (Zero Trust) でブロックされる。
 rust-logi に JWT 認証を追加し、専用 Worker 経由でファイルをアップロードする経路を構築する。
 
 ## アーキテクチャ

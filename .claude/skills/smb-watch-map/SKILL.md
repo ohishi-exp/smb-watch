@@ -2,7 +2,7 @@
 name: smb-watch-map
 generated-from: smb-watch:a521a51619730760f2d9b79c1d406274762b8ff4
 paths: [src/, deploy/]
-description: ohishi-exp/smb-watch (SMB 共有フォルダ監視 → HTTP アップロードツール、Windows/Linux 両対応) の構造ナビゲーション。SMB アクセス方式 (Windows net use / Linux pure-Rust smb2 crate)・device-token 認証 (auth-worker pairing)・Linux 自動デプロイ (musl + systemd oneshot/timer/path + Cloudflare Tunnel SSH)・ohishi-data 実機運用メモをまとめる。トリガー:「smb-watch」「SMB 監視」「smb2 crate」「device pairing」「smb-watch pair」「ohishi-data」「systemd timer OnCalendar」「musl deploy」「smb-watch デプロイ」「failed_files.txt」等。
+description: ohishi-exp/smb-watch (SMB 共有フォルダ監視 → HTTP アップロードツール、Windows/Linux 両対応) の構造ナビゲーション。SMB アクセス方式 (Windows net use / Linux pure-Rust smb2 crate)・device-token 認証 (auth-worker pairing)・Linux 自動デプロイ (musl + systemd oneshot/timer/path + Cloudflare Tunnel SSH)・<運用ホスト> 実機運用メモをまとめる。トリガー:「smb-watch」「SMB 監視」「smb2 crate」「device pairing」「smb-watch pair」「<運用ホスト>」「systemd timer OnCalendar」「musl deploy」「smb-watch デプロイ」「failed_files.txt」等。
 ---
 
 # smb-watch-map — 構造ナビゲーション
@@ -27,7 +27,7 @@ description: ohishi-exp/smb-watch (SMB 共有フォルダ監視 → HTTP アッ�
 ## CCoW/CI から見た立ち位置
 
 - CI: `.github/workflows/ci.yml` (test / musl build → SSH deploy)、`release.yml` (`v*.*.*` tag → Windows MSI + Linux musl binary)
-- deploy 先: ohishi-data (LAN 内 Linux host)、Cloudflare Tunnel SSH 経由。CCoW コンテナからは SSH 不可 (operator が実機で手動操作)
+- deploy 先: <運用ホスト> (LAN 内 Linux host)、Cloudflare Tunnel SSH 経由。CCoW コンテナからは SSH 不可 (operator が実機で手動操作)
 
 ## 関連 skill
 
@@ -53,13 +53,20 @@ uploader (read → アップロード) が同一 interface でローカル FS / 
   （`SMB_USER` / `SMB_PASS` env、SMB と同一 LAN 内で実行）。
 - `failed_files.txt` の識別子は Linux SMB では共有ルートからの相対パス、ローカルでは絶対パス。
 
+### SMB 接続先の設定（運用ホスト）
+
+SMB の接続先は public repo に値を置かないため既定値なし。運用ホストの `/etc/smb-watch/smb-watch.env` に
+`SMB_HOST=<smb-host>` / `SMB_SHARE=<共有>` / `SMB_PATH=<パス>` を足す（雛形は `deploy/smb-watch.env.example`）。
+未設定で通常 run すると `FileSource::open` が loud fail する（`--local-path` と `pair` は不要）。
+**既定値を消した binary を deploy する前に env へ値を足すこと**（次の timer run が落ちる）。
+
 ### 主な設定パラメータ（CLI / 環境変数）
 
 | パラメータ | デフォルト値 | 環境変数 |
 |---|---|---|
-| `--smb-host` | `172.18.21.102` | - |
-| `--smb-share` | `共有` | - |
-| `--smb-path` | `新車検証` | - |
+| `--smb-host` | (必須・既定値なし) | `SMB_HOST` |
+| `--smb-share` | (必須・既定値なし) | `SMB_SHARE` |
+| `--smb-path` | (必須・既定値なし、空=共有ルート) | `SMB_PATH` |
 | `--smb-user` | - | `SMB_USER` |
 | `--smb-pass` | - | `SMB_PASS` |
 | `--smb-domain` | `` | `SMB_DOMAIN` |
@@ -203,7 +210,7 @@ binary に焼き込む secret は無い（device credential は host の `/etc/s
 |---|---|---|
 | `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` | secret | CF Access service token（SSH 経路認証） |
 | `DEPLOY_SSH_KEY` | secret | CI 専用 SSH 秘密鍵（host の `authorized_keys` に公開鍵登録） |
-| `DEPLOY_SSH_HOST` | variable | CF Tunnel SSH ingress hostname（例: `ssh-smb-watch.mtamaramu.com`） |
+| `DEPLOY_SSH_HOST` | variable | CF Tunnel SSH ingress hostname（例: `<ssh-ingress-host>`） |
 
 `vars.DEPLOY_SSH_HOST` 未設定なら `deploy` job は `::error` で loud fail する。
 
@@ -214,11 +221,11 @@ binary に焼き込む secret は無い（device credential は host の `/etc/s
 | unit | 役割 |
 |---|---|
 | `deploy/smb-watch.service` | oneshot。`EnvironmentFile=/etc/smb-watch/smb-watch.env`、`WorkingDirectory=/var/lib/smb-watch`（状態ファイルの置き場）、`ExecStart=/opt/smb-watch/smb-watch` |
-| `deploy/smb-watch.timer` | `OnCalendar=Mon-Fri *-*-* 00..08:00:00`（**UTC 記述 = JST 9〜17 時**）+ `Persistent=true`（平日 毎正時、1 日 9 回）。ohishi-data は host TZ=UTC 運用（時刻依存 cron `backup`/`update_ichi` があるため host TZ は変えない）。host を JST にする場合は `09..17` に直す（systemd 245 は `OnCalendar` の TZ 接尾辞 v252+ が使えない） |
+| `deploy/smb-watch.timer` | `OnCalendar=Mon-Fri *-*-* 00..08:00:00`（**UTC 記述 = JST 9〜17 時**）+ `Persistent=true`（平日 毎正時、1 日 9 回）。<運用ホスト> は host TZ=UTC 運用（時刻依存 cron `backup`/`update_ichi` があるため host TZ は変えない）。host を JST にする場合は `09..17` に直す（systemd 245 は `OnCalendar` の TZ 接尾辞 v252+ が使えない） |
 | `deploy/smb-watch-watcher.path` | `PathModified=/opt/smb-watch/smb-watch` → deploy 後に即 1 回 run（次の timer を待たない） |
 
 one-time セットアップ:
-1. LAN 内 Linux ホストに `cloudflared` で SSH ingress（`ssh-smb-watch.mtamaramu.com → ssh://localhost:22`）追加
+1. LAN 内 Linux ホストに `cloudflared` で SSH ingress（`<ssh-ingress-host> → ssh://localhost:22`）追加
 2. CF Access app + Service Auth ポリシー（CI 専用 token のみ許可）
 3. deploy ユーザーの `~/.ssh/authorized_keys` に CI 公開鍵登録
 4. `/opt/smb-watch/`（binary）+ `/var/lib/smb-watch/`（状態）+ `/etc/smb-watch/smb-watch.env`（SMB 資格情報、`deploy/smb-watch.env.example` を元に 600）を作成。
@@ -233,9 +240,9 @@ one-time セットアップ:
 > SMB 資格情報（`SMB_USER` / `SMB_PASS` 等）は host の `/etc/smb-watch/smb-watch.env` に
 > だけ置き、GitHub Actions / workflow YAML には載せない（資格情報は host boundary に閉じる）。
 
-### ohishi-data 運用メモ（実機の確定事項・次回の参考）
+### <運用ホスト> 運用メモ（実機の確定事項・次回の参考）
 
-本番ホスト `ohishi-data`（ubuntu）で実際に確認・確定した事項。同種の作業をする時の前提。
+本番ホスト `<運用ホスト>`（ubuntu）で実際に確認・確定した事項。同種の作業をする時の前提。
 
 - **host TZ = UTC**（`systemctl list-timers` が全部 UTC 表示で確認）。**変更しない**。
   時刻依存の業務 cron（`/etc/cron.d/` の `backup` / `update_ichi`）があり、`timedatectl
@@ -258,15 +265,15 @@ one-time セットアップ:
   `since` に使う（`dry-run`/`ok`/`seed` の status で区別せず、最終行を読む）。**dry-run でも watermark は
   進む**ので注意（dry-run 後に通常 run しても、dry-run 時点以前のファイルは拾われない）。初回 backfill は
   `--since <古い時刻>` で明示。`seed` 行を手で入れて起点を固定する運用も可。
-- **このコンテナ（CCoW）からは ohishi-data へ SSH 不可**（egress TCP/443 のみ、cloudflared の UDP 7844 /
+- **このコンテナ（CCoW）からは <運用ホスト> へ SSH 不可**（egress TCP/443 のみ、cloudflared の UDP 7844 /
   Tailscale 不達）。host 上の操作（pairing 実行・systemd 反映・手動 run）は **operator が実機で叩く**。
 
 ### device pairing（headless、実機手順）
 
-box（ohishi-data）で完結する pairing（auth-worker `/device/pair/*`、ippoan/auth-worker#298）:
+box（<運用ホスト>）で完結する pairing（auth-worker `/device/pair/*`、ippoan/auth-worker#298）:
 
 ```sh
-sudo /opt/smb-watch/smb-watch pair --label ohishi-data --env-out /etc/smb-watch/smb-watch.env
+sudo /opt/smb-watch/smb-watch pair --label <運用ホスト> --env-out /etc/smb-watch/smb-watch.env
 # → 承認 URL + 確認コードが表示される
 #   operator がブラウザで URL を開き auth.ippoan.org にログイン(= tenant 確定) → 確認コード一致を確認 → 承認
 #   box が poll で credential を受領し env ファイルへ自動追記 (mode 600、device_secret は画面/log に出ない)
