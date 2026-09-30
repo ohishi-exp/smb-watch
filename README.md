@@ -15,7 +15,7 @@ SMB を走査してファイルを HTTP でアップロードしていた。取�
 
 - [ ] box の `smb-watch.timer` / `smb-watch-watcher.path` を `systemctl disable --now`
 - [ ] smb-watch の device credential を auth-worker `/device/revoke` で失効
-- [ ] auth-worker の KV `device-notify-targets` から box 用の旧キーを撤去
+- [ ] auth-worker の KV `device-notify-targets` の box 用キー (`device-uploader`) は、同じ role の有効な device が他にあれば残す (キーを消すとそれらの通知も止まる)。Worker 版の通知は別キー (`smb-ingest`) を使う
 - [ ] box 上の env ファイル・バイナリ・systemd unit ファイル・状態ファイルの削除
 - [ ] box への自動 deploy 経路の撤去
   - host の authorized_keys にある deploy 用の鍵
