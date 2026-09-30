@@ -111,8 +111,8 @@ auth-worker の binding はローカルに無いので、検証できるのは d
 
 ## 本番への切り替え
 
-1. VPC Service (TCP、宛先は社内の SMB サーバーの 445) を作る
-2. `worker/wrangler.toml` の `service_id` を入れる PR を merge する
+1. VPC Service (TCP、宛先は社内の SMB サーバーの 445) を作る — 済み (#14)
+2. `worker/wrangler.toml` の `service_id` を入れる PR を merge する — 済み (#14)
 3. secret を入れる: `SMB_USER` / `SMB_PASS` / `SMB_SHARE` / `SMB_PATH` (と要るなら `SMB_DOMAIN`)
 4. `DRY_RUN = "1"` のままタグ `worker-smb-ingest-v*` を打って deploy する (`.github/workflows/worker-smb-ingest.yml`)
 5. 数回ぶんの cron のログ (件数・basename) を box の smb-watch の結果と比較する

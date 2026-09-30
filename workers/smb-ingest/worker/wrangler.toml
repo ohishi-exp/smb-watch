@@ -33,7 +33,7 @@ region = "aws:ap-northeast-3"
 # SMB への口。宛先の Tunnel・host:port は VPC Service 側に閉じる (コードの connect() の宛先は名目)
 [[vpc_services]]
 binding = "SMB_VPC"
-service_id = "SET_AFTER_VPC_SERVICE_CREATION"
+service_id = "01a0f17d-2c08-7653-a859-bc3e709809a5"
 remote = true
 
 # 走行の状態 (watermark・lease・失敗一覧)。インスタンスは "state" の 1 つだけ
