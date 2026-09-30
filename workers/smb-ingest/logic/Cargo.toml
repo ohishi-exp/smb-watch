@@ -1,0 +1,8 @@
+[package]
+name = "smb-ingest-logic"
+version = "0.1.0"
+edition = "2021"
+description = "Worker に依存しない純粋ロジック (通知文・差分抽出・lease など)。std のみ。"
+publish = false
+
+[dependencies]
