@@ -116,5 +116,5 @@ auth-worker の binding はローカルに無いので、検証できるのは d
 4. `DRY_RUN = "1"` のままタグ `worker-smb-ingest-v*` を打って deploy する (`.github/workflows/worker-smb-ingest.yml`)
 5. 数回ぶんの cron のログ (件数・basename) を box の smb-watch の結果と比較する
 6. box の systemd timer を止める
-7. `INITIAL_SINCE` を box の最終 run の時刻にして入れる
+7. `INITIAL_SINCE` を box の last_run の最終行の開始時刻にする
 8. `DRY_RUN = "0"` にして deploy する (以後は watermark が since になる)

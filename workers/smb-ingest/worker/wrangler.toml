@@ -21,6 +21,10 @@ command = "cargo install -q worker-build@0.8.7 --locked && worker-build --releas
 [triggers]
 crons = ["0 0-8 * * 1-5"]
 
+# Workers Logs (ログを後から見られるようにする)
+[observability]
+enabled = true
+
 # ログに出る版の元。tag / message は deploy の --tag / --message (.github/workflows/worker-smb-ingest.yml)
 [version_metadata]
 binding = "CF_VERSION_METADATA"
@@ -62,4 +66,4 @@ SOURCE_LABEL = "新車検証 (Worker)"
 # "0" 以外は dry-run (列挙と「上げるはずの一覧」のログだけ)。本番に出た直後は dry-run のまま比較する
 DRY_RUN = "1"
 # since の初期値 (RFC3339)。保存した watermark が無い初回だけ使う。既定なし (無ければ何も上げず失敗通知)
-# INITIAL_SINCE = "2026-10-01T00:00:00+09:00"
+INITIAL_SINCE = "2026-09-28T00:00:00Z"
