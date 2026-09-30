@@ -1,0 +1,33 @@
+name: worker-smb-ingest
+
+on:
+  pull_request:
+    paths:
+      - 'workers/smb-ingest/**'
+      - '.github/workflows/worker-smb-ingest.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'workers/smb-ingest/**'
+      - '.github/workflows/worker-smb-ingest.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  logic:
+    name: Test + wasm32 build (logic)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Test
+        run: cargo test --manifest-path workers/smb-ingest/Cargo.toml -p smb-ingest-logic
+
+      - name: Build (wasm32-unknown-unknown)
+        run: cargo build --manifest-path workers/smb-ingest/Cargo.toml -p smb-ingest-logic --target wasm32-unknown-unknown
