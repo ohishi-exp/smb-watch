@@ -37,6 +37,13 @@ jobs:
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown
 
+      - uses: swatinem/rust-cache@v2
+        with:
+          # worker / deploy の job とは target の中身が違うので別のキー
+          shared-key: smb-ingest-logic
+          workspaces: workers/smb-ingest -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
       - name: Test
         run: cargo test --manifest-path workers/smb-ingest/Cargo.toml -p smb-ingest-logic
 
@@ -60,6 +67,13 @@ jobs:
 
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          # build の job とデプロイの job で同じキャッシュを使う (既定のキーは job 名を含み、デプロイから引けない)
+          shared-key: smb-ingest-worker
+          workspaces: workers/smb-ingest -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Exposure check
         run: bash scripts/check-exposure.sh worker/wrangler.toml
@@ -101,6 +115,14 @@ jobs:
 
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          # build の job とデプロイの job で同じキャッシュを使う (既定のキーは job 名を含み、デプロイから引けない)
+          # 保存は worker の job に任せ、ここは復元だけ
+          shared-key: smb-ingest-worker
+          workspaces: workers/smb-ingest -> target
+          save-if: false
 
       - run: cargo install -q worker-build@0.8.7 --locked
 
