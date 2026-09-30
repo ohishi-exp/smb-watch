@@ -1,15 +1,14 @@
 name: worker-smb-ingest
 
 # workers/smb-ingest (Refs #14)。
-#   - pull_request / main への push → logic の test、Worker の build・公開範囲の検査・wrangler deploy --dry-run
+#   - pull_request (全 PR。paths で絞らない) / main への push → logic の test、Worker の build・公開範囲の検査・wrangler deploy --dry-run
 #   - タグ worker-smb-ingest-v*      → 本番へ deploy (wrangler.toml のトップレベル。env は持たない)
-# タグの接頭辞は release.yml の v*.*.* に当たらない形にしている (native の MSI / musl のリリースを発火させない)。
+# v*.*.* タグは使わない (過去の native リリースの名残)。
+# この workflow が repo 唯一の CI。pull_request は全 PR で走り、auto-merge job を持つ (docs だけの PR も検査を通って merge される)。
 # account_id は書かない (CLOUDFLARE_API_TOKEN から決まる)。wrangler の出力はファイルに取り、mask してから伏せて出す。
 on:
   pull_request:
-    paths:
-      - 'workers/smb-ingest/**'
-      - '.github/workflows/worker-smb-ingest.yml'
+    branches: [main]
   push:
     branches: [main]
     tags: ['worker-smb-ingest-v*']
@@ -147,3 +146,24 @@ jobs:
             echo "::error::本番に workers.dev の URL が付いた (workers_dev = false のはず。直ちに止めること)"
             exit 1
           fi
+
+  # CI green 後に squash auto-merge を queue する (org 標準の caller-composed pattern)。
+  # deploy job は push (merge 後) のみ走るので auto-merge (PR run) とは排他 = merge -> branch 削除で
+  # deploy が cancel される race は起きない。auto-merge.yml の deploy gate 静的検査は DAG だけ見て
+  # trigger 排他を判別できず deploy を needs 未配線として loud fail するので deploy_gate_ignore で除外する。
+  auto-merge:
+    if: github.event_name == 'pull_request'
+    needs: [logic, worker]
+    uses: ippoan/ci-workflows/.github/workflows/auto-merge.yml@main
+    with:
+      deploy_gate_ignore: 'deploy'
+    # auto-merge.yml は GitHub App credential (CI_APP_ID / CI_APP_PRIVATE_KEY) 必須。
+    # reusable が **別 org (ippoan)** にあるため `secrets: inherit` は効かない
+    # (inherit は同一 org / enterprise 内の reusable にしか渡さない)。ohishi-exp org
+    # secret を named secret として明示的に渡す。
+    secrets:
+      CI_APP_ID: ${{ secrets.CI_APP_ID }}
+      CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
+    permissions:
+      contents: write
+      pull-requests: write

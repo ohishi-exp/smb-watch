@@ -1,43 +1,32 @@
 # smb-watch
 
-SMB 共有フォルダを監視し、変更されたファイルを HTTP でアップロードするツール。
-Windows / Linux 両対応 (Issue #1 で Windows → Linux 無人運用に移行中)。
+SMB 共有の新しいファイルを Cloudflare Worker が読み、carins に取り込む。
+かつての box 版 (native) は退役済みで、repo には Worker だけが残っている。
 
 ## プロジェクト概要
 
 | 項目 | 値 |
 |---|---|
-| バイナリ名 | `smb-watch` (Windows: `smb-watch.exe`) |
-| ターゲット | `x86_64-pc-windows-msvc` / `x86_64-unknown-linux-musl` |
-| 非同期ランタイム | Tokio |
-| TLS | rustls（OpenSSL 不要） |
+| 中身 | Cloudflare Worker `workers/smb-ingest` (workers-rs、`wasm32-unknown-unknown`) |
+| 起動 | Cron (平日 JST 9〜17 時の毎正時) と、Service Binding 専用の `POST /run` (carins のボタン) |
+| リリース | タグ `worker-smb-ingest-v*` (CI の deploy job) |
 
 ## 主なコマンド
 
-```powershell
-cargo build --release --target x86_64-pc-windows-msvc   # ビルド (Windows)
-cargo release patch --execute                            # リリース (tag push → GitHub Release)
-```
-
-Linux 側は `ci.yml` の `deploy` job が `main` merge 時に musl build → SSH で自動デプロイする
-（常駐しない oneshot、systemd timer で定期実行）。
+ビルドと検査は `workers/smb-ingest/README.md` の「ビルドと検査」を参照
+(`cargo test -p smb-ingest-logic`・`scripts/check-exposure*.sh`・`worker-build`)。
 
 ## 必ず守ること
 
-- **`wix/main.wxs` の `UpgradeCode` (`D802E510-9F08-408B-BFFD-B0B491E7F908`) は変更禁止。**
-  変更するとバージョンアップ時に別製品として扱われる。
-- **SMB 資格情報 (`SMB_USER`/`SMB_PASS` 等) は host の `/etc/smb-watch/smb-watch.env` にだけ
-  置き、GitHub Actions / workflow YAML には載せない**（host boundary に閉じる）。
-- **<運用ホスト> の host TZ (UTC) は変更しない**（時刻依存の業務 cron `backup`/`update_ichi` が
-  9h ずれるため）。JST スケジュールは systemd timer 側を UTC 記述で表現する。
-- device credential (`--device-id`/`--device-secret`) が未設定だと upload は loud fail する
-  （想定挙動、隠さず落とす）。`--dry-run` は SMB 走査のみで認証・upload をスキップする。
-- `smb-watch pair` は SMB を一切触らず pairing のみ行う（subcommand 無しの通常 run と排他）。
-  `device_secret` を log には出さない。
+1. SMB 資格情報は Secrets Store の `SMB_INGEST_SMB` (JSON 1 つ) にだけ置く。GitHub Actions / workflow / repo に載せない
+2. public repo にホスト名・IP・Tunnel ID・共有名・パス・account ID・tenant UUID を書かない
+   (VPC の `service_id` と Secrets Store の `store_id` は可)
+3. `workers/smb-ingest/worker/wrangler.toml` のまま `wrangler dev` を打たない
+   (`vpc_services` が remote で Cloudflare API に繋ぐ)。ローカル検証は README の手順 (repo 外のコピー + `LOCAL_SMB_*`)
+4. タグは `worker-smb-ingest-v*` だけ。`v*.*.*` は使わない
+5. GitHub Actions の Cloudflare token は org secret `CLOUDFLARE_API_TOKEN` を使い、repo 単位の secret を作らない
 
 ## 詳細
 
-SMB アクセス方式 (OS 別)・設定パラメータ・device-token 認証・開発環境セットアップ・
-ローカルビルド・リリース手順・CI/CD・Linux 自動デプロイ (systemd 構成・CF Tunnel SSH・
-<運用ホスト> 実機運用メモ・device pairing 実機手順)・WiX MSI インストーラの詳細は
-`smb-watch-map` skill を参照。
+設定・ローカル検証の罠・ログの見方・リリース手順は `smb-watch-map` skill と
+`workers/smb-ingest/README.md` を参照。

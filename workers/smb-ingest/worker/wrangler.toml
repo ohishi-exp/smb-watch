@@ -63,7 +63,7 @@ entrypoint = "SmbIngestEntrypoint"
 [vars]
 # 通知の 2 行目 (出所表記)。社内の名前を入れない
 SOURCE_LABEL = "新車検証 (Worker)"
-# "0" 以外は dry-run (列挙と「上げるはずの一覧」のログだけ)。box 退役後は "0" (本番取り込み)。POST /run も ?dry_run=1 が無ければ取り込む
+# "0" 以外は dry-run (列挙と「上げるはずの一覧」のログだけ)。本番は "0" (本番取り込み)。POST /run も ?dry_run=1 が無ければ取り込む
 DRY_RUN = "0"
 # since の初期値 (RFC3339)。保存した watermark が無い初回だけ使う。既定なし (無ければ何も上げず失敗通知)
 INITIAL_SINCE = "2026-09-30T08:01:00Z"

@@ -1,6 +1,6 @@
 //! smb-ingest: SMB 共有の新しいファイルを auth-worker 経由で取り込む Worker (cron + Service Binding 専用の `POST /run`) (Refs ohishi-exp/smb-watch#14)。
 //!
-//! 社内の box で systemd timer から動いていた smb-watch (native) の置き換え。1 run の流れ:
+//! 1 run の流れ:
 //!
 //! 1. DO `SmbIngestState` で lease を取る (保持中なら何もしない。期限切れ = 前回が途中で止まった印)
 //! 2. since = 保存した watermark、無ければ var `INITIAL_SINCE` (どちらも無ければ何も上げず失敗通知)
@@ -460,7 +460,7 @@ async fn connect(env: &Env, settings: &SmbConfig) -> Result<(SmbClient, Tree), R
     Ok((client, tree))
 }
 
-/// `root` 配下を再帰列挙する (native `src/smb_fs.rs` の `list_files` と同じ順序・同じ id)。
+/// `root` 配下を再帰列挙する。
 async fn list_files(
     client: &mut SmbClient,
     tree: &mut Tree,
@@ -503,7 +503,7 @@ async fn list_files(
 }
 
 /// FILETIME (100ns 単位・1601 起点) を UNIX ミリ秒に。UNIX 起点より前は `None`
-/// (native は `to_system_time()` が `None` のとき skip する。wasm32 では `SystemTime` を避ける)。
+/// (wasm32 では `SystemTime` を避ける)。
 fn filetime_to_unix_ms(filetime: u64) -> Option<u64> {
     filetime
         .checked_sub(FILETIME_UNIX_EPOCH)
