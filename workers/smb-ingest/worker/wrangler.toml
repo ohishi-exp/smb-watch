@@ -7,8 +7,7 @@
 #   scripts/check-exposure.sh が CI で毎回これを検査する (陰性対照は scripts/check-exposure-test.sh)。
 # account_id は書かない (CLOUDFLARE_API_TOKEN から決まる)。
 #
-# secret (値は repo に書かない。`wrangler secret put`):
-#   SMB_USER / SMB_PASS / SMB_DOMAIN (無ければ空) / SMB_SHARE / SMB_PATH
+# SMB の設定は Secrets Store の secret SMB_INGEST_SMB (JSON。キー user/pass/domain/share/path。値は repo に書かない)
 name = "smb-ingest"
 main = "build/index.js"
 compatibility_date = "2026-09-01"
@@ -35,6 +34,12 @@ region = "aws:ap-northeast-3"
 binding = "SMB_VPC"
 service_id = "01a0f17d-2c08-7653-a859-bc3e709809a5"
 remote = true
+
+# SMB の接続設定 (資格情報・共有名・パス)。store_id は資格情報ではない (auth-worker の wrangler.toml にも載っている既存 store)
+[[secrets_store_secrets]]
+binding = "SMB_INGEST_SMB"
+store_id = "bd7bc91a3e5f4111add4acf6cb4b8733"
+secret_name = "SMB_INGEST_SMB"
 
 # 走行の状態 (watermark・lease・失敗一覧)。インスタンスは "state" の 1 つだけ
 [[durable_objects.bindings]]

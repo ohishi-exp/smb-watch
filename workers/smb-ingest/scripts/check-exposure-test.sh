@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check-exposure.sh の陰性対照。wrangler.toml を tomllib で読んだ dict を 1 か所ずつ崩して TOML に書き戻し、
-# (a)〜(e) それぞれで exit 1 になること、元のまま・書き戻しただけなら exit 0 になることを確かめる。
+# (a)〜(e)・(g) それぞれで exit 1 になること、元のまま・書き戻しただけなら exit 0 になることを確かめる。
 # 文字列の特定の表の直前に行を挿す作りにはしない (表の中身に紛れて別の表のキーになる — rust-alc-api#698)。
 # CI で check-exposure.sh の直後に走る。
 #
@@ -107,6 +107,8 @@ mutate 1 "(d) vpc_services を env 側へ動かす" \
   'cfg["env"] = {"prod": {"vpc_services": cfg.pop("vpc_services")}}'
 # (e)
 mutate 1 "(e) vars に LOCAL_SMB_ADDR" 'cfg.setdefault("vars", {})["LOCAL_SMB_ADDR"] = "127.0.0.1:445"'
+# (g)
+mutate 1 "(g) vars に LOCAL_SMB_CONFIG_JSON" 'cfg.setdefault("vars", {})["LOCAL_SMB_CONFIG_JSON"] = "{}"'
 # (f) は warning だけ: service_id を実値らしくしても、プレースホルダのままでも exit 0
 mutate 0 "(f) service_id を入れた (warning 無し)" \
   'cfg["vpc_services"][0]["service_id"] = "00000000-0000-0000-0000-000000000000"'
