@@ -1,0 +1,30 @@
+# smb-ingest の Worker 本体 (Refs ohishi-exp/smb-watch#14)。cron (scheduled) だけを持ち、fetch ハンドラは持たない。
+# SMB へは Workers VPC の binding SMB_VPC (VPC Service 型) から TCP で繋ぎ、smb2 (feature wasm) で話す。
+# 取り込みと通知は auth-worker の SmbIngestEntrypoint (service binding AUTH_WORKER_INGEST) に RPC で渡す。
+# 判定・文面などの純粋部分は ../logic (smb-ingest-logic) に置く。
+[package]
+name = "smb-ingest-worker"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+async-trait = "0.1"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["alloc"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+js-sys = "0.3"
+mime_guess = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde-wasm-bindgen = "0.6"
+smb-ingest-logic = { path = "../logic" }
+smb2 = { git = "https://github.com/ohishi-exp/smb2", rev = "7691640e4d1efcd13535612a387662d8f0463414", default-features = false, features = ["wasm"] }
+# `split` for the socket; `sync` for the async mutexes the transport halves sit behind (smb2 の workers-probe と同じ)
+tokio = { version = "1", default-features = false, features = ["io-util", "sync"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+worker = "=0.8.7"
