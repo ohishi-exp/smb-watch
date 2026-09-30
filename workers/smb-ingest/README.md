@@ -29,7 +29,7 @@ cron (平日 JST 9〜17 時の毎正時)
    前回が途中で止まった印として続行し、通知に「前回の run が途中で止まった」を足す
 2. since = 保存した watermark、無ければ var `INITIAL_SINCE`。どちらも無ければ何も上げずに失敗を通知する
    (0 にフォールバックして全件を上げ直す事故を防ぐ)
-3. SMB に繋ぎ (connect〜tree connect に 30 秒の上限)、`SMB_PATH` 配下を再帰列挙する
+3. SMB に繋ぎ (connect〜tree connect に 30 秒の上限)、設定の `path` 配下を再帰列挙する
 4. `mtime > since` のファイルと前回の失敗を、1 件ずつ read (60 秒の上限) → base64 → `ingestFile`。
    12 MiB 超・read の失敗や timeout・2xx 以外は失敗に積み、次の run で再試行する
 5. `finish` — watermark を run の開始時刻に進め、失敗一覧を置き換え、lease を解放する。
@@ -41,10 +41,7 @@ cron (平日 JST 9〜17 時の毎正時)
 
 | 種別 | 名前 | 中身 |
 |---|---|---|
-| secret | `SMB_USER` / `SMB_PASS` | NTLM の資格情報 |
-| secret | `SMB_DOMAIN` | NTLM のドメイン (無ければ設定しない = 空) |
-| secret | `SMB_SHARE` | 共有名 |
-| secret | `SMB_PATH` | 共有内の起点ディレクトリ |
+| Secrets Store | `SMB_INGEST_SMB` | JSON。キー `user` / `pass` / `domain` / `share` / `path` (全キー必須の文字列。`domain` だけ空文字可)。NTLM の資格情報・共有名・共有内の起点ディレクトリ |
 | var | `SOURCE_LABEL` | 通知の 2 行目 (出所表記)。社内の名前を入れない |
 | var | `DRY_RUN` | `"0"` 以外 (既定 `"1"`) は dry-run: 列挙と「上げるはずの一覧」のログだけで、`ingestFile`・`notify`・watermark の更新をしない |
 | var | `INITIAL_SINCE` | since の初期値 (RFC3339)。watermark が無い初回だけ使う。既定なし |
@@ -52,10 +49,14 @@ cron (平日 JST 9〜17 時の毎正時)
 | binding | `SMB_INGEST_STATE` | Durable Object `SmbIngestState` |
 | binding | `AUTH_WORKER_INGEST` | auth-worker の `SmbIngestEntrypoint` |
 
-ローカル検証専用の `LOCAL_SMB_ADDR` (host:port) は `.dev.vars` にだけ置く (VPC を迂回して直接繋ぐ)。
+`SMB_INGEST_SMB` は binding (`[[secrets_store_secrets]]`、`store_id` は資格情報ではない) 越しに読む。
+JSON が読めない・キーが欠けている・`domain` 以外が空のときは run 全体の失敗 (エラーに中身は含めない)。
+
+ローカル検証専用の `LOCAL_SMB_ADDR` (host:port) と `LOCAL_SMB_CONFIG_JSON` (`SMB_INGEST_SMB` と同じ JSON。
+あるときだけそれを読み、Secrets Store は見ない) は `.dev.vars` にだけ置く。どちらも `vars` に置かない。
 
 ログと通知に出すのは件数と basename だけ。共有名・パスを含む full path はどこにも出さない
-(smb2 のエラー文言に含まれる `SMB_SHARE` / `SMB_PATH` も伏せてから出す)。
+(smb2 のエラー文言に含まれる設定の `share` / `path` も伏せてから出す)。
 
 ## 公開範囲
 
@@ -64,7 +65,7 @@ cron (平日 JST 9〜17 時の毎正時)
 - トップレベルに `workers_dev = false` と `preview_urls = false` が明示されている
 - `route` / `routes` が無い、`env` 表が無い (トップレベルだけで運用する)
 - SMB への口 `vpc_services` はトップレベルにある
-- `vars` に `LOCAL_SMB_ADDR` が無い
+- `vars` に `LOCAL_SMB_ADDR` と `LOCAL_SMB_CONFIG_JSON` が無い
 - `service_id` がプレースホルダのままなら warning (fail にはしない)
 
 Worker は fetch ハンドラを持たず、DO はこの Worker の binding からしか届かない。
@@ -89,15 +90,13 @@ auth-worker の binding はローカルに無いので、検証できるのは d
 1. ohishi-exp/smb2 の NTLM fixture (`crates/smb2/tests/docker/internal/smb-auth`、`testuser` / `testpass`、
    共有 `private`) を 127.0.0.1 のエフェメラルポートで起動し、ダミーファイルを置く
 2. `worker/wrangler.toml` の `vpc_services` は `remote = true` なので、そのまま `wrangler dev` すると
-   Cloudflare API に繋ぎにいく。ローカル専用のコピー (vpc_services と `[build]` を外し、`main` を
-   ビルド済みの `worker/build/index.js` に向けたもの) を repo の外に作り、その隣に `.dev.vars` を置く:
+   Cloudflare API に繋ぎにいく。ローカル専用のコピー (vpc_services と `[build]` と `secrets_store_secrets` を外し、`main` を
+   ビルド済みの `worker/build/index.js` に向けたもの。`secrets_store_secrets` もローカルでは使えないので外す) を
+   repo の外に作り、その隣に `.dev.vars` を置く。SMB の設定は `LOCAL_SMB_CONFIG_JSON` で渡す:
 
    ```sh
    LOCAL_SMB_ADDR=127.0.0.1:<port>
-   SMB_USER=testuser
-   SMB_PASS=testpass
-   SMB_SHARE=private
-   SMB_PATH=<置いたディレクトリ>
+   LOCAL_SMB_CONFIG_JSON={"user":"testuser","pass":"testpass","domain":"","share":"private","path":"<置いたディレクトリ>"}
    DRY_RUN=1
    INITIAL_SINCE=2020-01-01T00:00:00+09:00
    ```
@@ -113,7 +112,7 @@ auth-worker の binding はローカルに無いので、検証できるのは d
 
 1. VPC Service (TCP、宛先は社内の SMB サーバーの 445) を作る — 済み (#14)
 2. `worker/wrangler.toml` の `service_id` を入れる PR を merge する — 済み (#14)
-3. secret を入れる: `SMB_USER` / `SMB_PASS` / `SMB_SHARE` / `SMB_PATH` (と要るなら `SMB_DOMAIN`)
+3. Secrets Store の `SMB_INGEST_SMB` (JSON) を入れる — 済み (#14)
 4. `DRY_RUN = "1"` のままタグ `worker-smb-ingest-v*` を打って deploy する (`.github/workflows/worker-smb-ingest.yml`)
 5. 数回ぶんの cron のログ (件数・basename) を box の smb-watch の結果と比較する
 6. box の systemd timer を止める

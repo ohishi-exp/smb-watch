@@ -6,8 +6,9 @@
 #   (c) env 表が無い (トップレベルだけで運用する。env を足すと上の検査を env ごとにやり直す必要がある)
 #   (d) トップレベルに vpc_services がある (SMB への口。env 側へ動いていない)
 #   (e) vars に LOCAL_SMB_ADDR (ローカル検証で VPC を迂回して直接繋ぐフラグ) が無い
+#   (g) vars に LOCAL_SMB_CONFIG_JSON (ローカル検証で Secrets Store の代わりに SMB の設定 JSON を渡す var) が無い
 #   (f) vpc_services の service_id がプレースホルダのままなら warning (fail にはしない。VPC Service 作成後に入れる)
-# (a)〜(e) が 1 つでも違えば exit 1。CI で毎回走らせる。陰性対照は scripts/check-exposure-test.sh。
+# (a)〜(e)・(g) が 1 つでも違えば exit 1。CI で毎回走らせる。陰性対照は scripts/check-exposure-test.sh。
 #
 #   bash scripts/check-exposure.sh worker/wrangler.toml
 set -euo pipefail
@@ -57,6 +58,10 @@ if not isinstance(vpcs, list) or not vpcs:
 if "LOCAL_SMB_ADDR" in cfg.get("vars", {}):
     err("vars に LOCAL_SMB_ADDR がある (VPC を迂回して直接繋ぐ。ローカルの .dev.vars 専用)")
 
+# (g) 資格情報を含む設定 JSON を vars に置かない (ローカルの .dev.vars 専用)
+if "LOCAL_SMB_CONFIG_JSON" in cfg.get("vars", {}):
+    err("vars に LOCAL_SMB_CONFIG_JSON がある (SMB の資格情報が vars に載る。ローカルの .dev.vars 専用)")
+
 # (f) service_id のプレースホルダ (warning のみ)
 for v in vpcs or []:
     if isinstance(v, dict) and v.get("service_id") == PLACEHOLDER:
@@ -64,5 +69,5 @@ for v in vpcs or []:
 
 if errors:
     sys.exit(1)
-print(f"OK: {path} は workers_dev / preview_urls = false・route 無し・env 無し・vpc_services はトップレベル・LOCAL_SMB_ADDR 無し")
+print(f"OK: {path} は workers_dev / preview_urls = false・route 無し・env 無し・vpc_services はトップレベル・LOCAL_SMB_ADDR / LOCAL_SMB_CONFIG_JSON 無し")
 PY

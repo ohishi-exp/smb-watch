@@ -11,7 +11,7 @@
 //! `DRY_RUN` が `"0"` 以外 (既定 `"1"`) のときは列挙と「上げるはずの一覧」のログだけで、
 //! `ingestFile`・`notify`・watermark の更新をしない (lease は解放する)。
 //!
-//! ログと通知に出すのは件数と basename だけ。共有名・パス (secret `SMB_SHARE` / `SMB_PATH`) を含む
+//! ログと通知に出すのは件数と basename だけ。共有名・パス (secret `SMB_INGEST_SMB` の share / path) を含む
 //! full path はどこにも出さない (エラー文言からも伏せる)。
 
 mod ingest;
@@ -83,8 +83,14 @@ async fn run(env: &Env) -> worker::Result<()> {
         lease.failed.len()
     );
 
-    let redact = Redact::from_env(env);
-    let outcome = ingest_changed(env, &lease, dry_run, &redact).await;
+    let config = load_config(env).await;
+    let redact = config
+        .as_ref()
+        .map_or_else(|_| Redact(Vec::new()), Redact::from_config);
+    let outcome = match config {
+        Ok(config) => ingest_changed(env, &lease, dry_run, &redact, &config).await,
+        Err(e) => Err(e),
+    };
 
     // 失敗一覧・watermark は dry-run では触らない (lease の解放だけ)
     let finish = match &outcome {
@@ -163,12 +169,56 @@ impl RunError {
     }
 }
 
-struct SmbSettings {
+/// Secrets Store の secret `SMB_INGEST_SMB` (JSON)。ローカルでは var `LOCAL_SMB_CONFIG_JSON` が代わりになる。
+/// `Debug` は実装しない (値をログに出さない)。
+#[derive(serde::Deserialize)]
+struct SmbConfig {
     user: String,
     pass: String,
+    /// 空文字もありうる (それ以外は空を許さない)。
     domain: String,
     share: String,
-    root: String,
+    path: String,
+}
+
+impl SmbConfig {
+    /// JSON から読む。エラーに値を含めない (serde のメッセージは値を引用しうるので分類だけ返す)。
+    fn parse(json: &str) -> Result<Self, RunError> {
+        let config: Self = serde_json::from_str(json)
+            .map_err(|e| RunError::new("SMB 設定が読めない", format!("{:?}", e.classify())))?;
+        for (name, value) in [
+            ("user", &config.user),
+            ("pass", &config.pass),
+            ("share", &config.share),
+            ("path", &config.path),
+        ] {
+            if value.is_empty() {
+                return Err(RunError::new("設定不足 (SMB_INGEST_SMB)", name));
+            }
+        }
+        Ok(config)
+    }
+
+    /// 列挙の起点 (前後の区切りを落とした共有内パス)。
+    fn root(&self) -> &str {
+        self.path.trim_matches(['/', '\\'])
+    }
+}
+
+async fn load_config(env: &Env) -> Result<SmbConfig, RunError> {
+    // ローカル検証 (wrangler dev) だけ: Secrets Store が使えないので var LOCAL_SMB_CONFIG_JSON で代える。
+    // 本番の vars には置かない (scripts/check-exposure.sh が検査する)
+    if let Some(json) = text(env, "LOCAL_SMB_CONFIG_JSON") {
+        return SmbConfig::parse(&json);
+    }
+    let json = env
+        .secret_store("SMB_INGEST_SMB")
+        .map_err(|e| RunError::new("SMB_INGEST_SMB の binding が無い", e))?
+        .get()
+        .await
+        .map_err(|e| RunError::new("SMB_INGEST_SMB を読めない", e))?
+        .ok_or_else(|| RunError::new("SMB_INGEST_SMB が空", "secret not found"))?;
+    SmbConfig::parse(&json)
 }
 
 async fn ingest_changed(
@@ -176,6 +226,7 @@ async fn ingest_changed(
     lease: &LeaseAcquired,
     dry_run: bool,
     redact: &Redact,
+    settings: &SmbConfig,
 ) -> Result<Report, RunError> {
     let initial = match text(env, "INITIAL_SINCE") {
         None => None,
@@ -187,15 +238,6 @@ async fn ingest_changed(
     let since = resolve_since(lease.stored_since_ms, initial)
         .map_err(|e| RunError::new("since が未設定 (INITIAL_SINCE を入れる)", e))?;
 
-    let settings = SmbSettings {
-        user: required(env, "SMB_USER")?,
-        pass: required(env, "SMB_PASS")?,
-        domain: text(env, "SMB_DOMAIN").unwrap_or_default(),
-        share: required(env, "SMB_SHARE")?,
-        root: required(env, "SMB_PATH")?
-            .trim_matches(['/', '\\'])
-            .to_string(),
-    };
     // dry-run では auth-worker を呼ばない。本番は binding が無ければ SMB に繋ぐ前に落とす
     let ingest = if dry_run {
         None
@@ -203,7 +245,7 @@ async fn ingest_changed(
         Some(Ingest::from_env(env).map_err(|e| RunError::new("AUTH_WORKER_INGEST が無い", e))?)
     };
 
-    let (mut client, mut tree) = match timeout(CONNECT_TIMEOUT, connect(env, &settings)).await {
+    let (mut client, mut tree) = match timeout(CONNECT_TIMEOUT, connect(env, settings)).await {
         None => {
             return Err(RunError::new(
                 "SMB 接続が 30 秒で終わらない",
@@ -216,7 +258,7 @@ async fn ingest_changed(
     let result = scan_and_ingest(
         &mut client,
         &mut tree,
-        &settings,
+        settings,
         since,
         lease,
         ingest,
@@ -235,13 +277,13 @@ async fn ingest_changed(
 async fn scan_and_ingest(
     client: &mut SmbClient,
     tree: &mut Tree,
-    settings: &SmbSettings,
+    settings: &SmbConfig,
     since: u64,
     lease: &LeaseAcquired,
     ingest: Option<Ingest>,
     redact: &Redact,
 ) -> Result<Report, RunError> {
-    let entries = list_files(client, tree, &settings.root).await?;
+    let entries = list_files(client, tree, settings.root()).await?;
     let sizes: HashMap<&str, u64> = entries.iter().map(|e| (e.id.as_str(), e.size)).collect();
     let ids = candidates(&entries, since, &lease.failed);
     let files_found = ids.len();
@@ -324,7 +366,7 @@ async fn ingest_one(
     }
 }
 
-async fn connect(env: &Env, settings: &SmbSettings) -> Result<(SmbClient, Tree), RunError> {
+async fn connect(env: &Env, settings: &SmbConfig) -> Result<(SmbClient, Tree), RunError> {
     // ローカル検証 (wrangler dev) だけ: LOCAL_SMB_ADDR があれば直接繋ぐ。本番の vars には置かない
     // (scripts/check-exposure.sh が検査する)
     let (addr, route) = match text(env, "LOCAL_SMB_ADDR") {
@@ -425,10 +467,6 @@ fn text(env: &Env, name: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-fn required(env: &Env, name: &'static str) -> Result<String, RunError> {
-    text(env, name).ok_or_else(|| RunError::new("設定不足 (secret / var)", name))
-}
-
 fn short(s: &str) -> String {
     s.chars().take(200).collect()
 }
@@ -437,16 +475,13 @@ fn short(s: &str) -> String {
 struct Redact(Vec<(String, &'static str)>);
 
 impl Redact {
-    fn from_env(env: &Env) -> Self {
-        let mut pairs = Vec::new();
-        if let Some(path) = text(env, "SMB_PATH") {
-            let path = path.trim_matches(['/', '\\']).to_string();
-            pairs.push((path.replace('/', "\\"), "<path>"));
-            pairs.push((path, "<path>"));
-        }
-        if let Some(share) = text(env, "SMB_SHARE") {
-            pairs.push((share, "<share>"));
-        }
+    fn from_config(config: &SmbConfig) -> Self {
+        let path = config.root().to_string();
+        let mut pairs = vec![
+            (path.replace('/', "\\"), "<path>"),
+            (path, "<path>"),
+            (config.share.clone(), "<share>"),
+        ];
         pairs.retain(|(s, _)| !s.is_empty());
         Self(pairs)
     }
