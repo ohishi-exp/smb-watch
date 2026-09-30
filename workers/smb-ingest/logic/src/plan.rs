@@ -16,7 +16,6 @@ pub struct Entry {
 /// 処理対象の id を返す。`mtime_ms > since_ms` の id と、前回失敗した `retry` のうち
 /// `entries` に今も在るものを、重複なく id 順にマージする。
 ///
-/// native 版 (`scanner.rs` の retain + sort と `main.rs` のマージ) と同じ意味。
 /// retry のうち `entries` に無い id (その後消えたファイル) は落とす。
 pub fn candidates(entries: &[Entry], since_ms: u64, retry: &[String]) -> Vec<String> {
     let retry: BTreeSet<&str> = retry.iter().map(String::as_str).collect();

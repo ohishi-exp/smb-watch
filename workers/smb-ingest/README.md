@@ -1,8 +1,8 @@
 # workers/smb-ingest
 
-社内の box で systemd timer から動いている smb-watch (native、リポジトリのルート) を置き換える
-Cloudflare Worker (Refs #14)。SMB 共有の新しいファイルを読み、auth-worker 経由で carins に取り込み、
-走行結果を LINE WORKS に通知する。
+Cloudflare Worker (Refs #14)。かつて社内の box の native 版 smb-watch が担っていた取り込みを置き換えた
+(native 版は退役済み。経緯はリポジトリルートの README)。SMB 共有の新しいファイルを読み、
+auth-worker 経由で carins に取り込み、走行結果を LINE WORKS に通知する。
 
 ## 構成
 
@@ -116,7 +116,7 @@ auth-worker の binding はローカルに無いので、検証できるのは d
 2. `worker/wrangler.toml` の `service_id` を入れる PR を merge する — 済み (#14)
 3. Secrets Store の `SMB_INGEST_SMB` (JSON) を入れる — 済み (#14)
 4. `DRY_RUN = "1"` のままタグ `worker-smb-ingest-v*` を打って deploy する (`.github/workflows/worker-smb-ingest.yml`) — 済み (#14)
-5. 数回ぶんの cron のログ (件数・basename) を box の smb-watch の結果と比較する — 済み (#14)
-6. box の systemd timer を止める — 済み (#14)
-7. `INITIAL_SINCE` を box の last_run の最終行の開始時刻にする — 済み (#14)
+5. 数回ぶんの cron のログ (件数・basename) を旧 box 版の結果と比較した (#14)
+6. 旧 box の systemd timer を止めた (#14)
+7. `INITIAL_SINCE` を旧 box 版の last_run の最終行の開始時刻にした (#14)
 8. `DRY_RUN = "0"` にして deploy する (以後は watermark が since になる) — 本 PR (タグ `worker-smb-ingest-v0.1.2` で deploy)

@@ -1,7 +1,6 @@
 //! 走行結果の LINE WORKS 通知の純粋部分 (判定と文面組み立て)。
 //!
-//! native 版 `src/notify.rs` から移植したコピー。送信 (副作用) は Worker 側が持つ。
-//! 重複は #17 で native 側を削除して解消する。
+//! 送信 (副作用) は Worker 側が持つ。
 
 const SUBJECT: &str = "[carins 車検証]";
 
@@ -19,7 +18,7 @@ const MAX_NAME_UNITS: usize = 120;
 
 /// `Entry.id` からファイル名部分を取り出す。
 ///
-/// native 版 `src/source.rs` の `file_name_of` と同じ。#17 で native 側を削除する。
+/// `id` の最後の区切り以降をファイル名とする。
 pub fn file_name_of(id: &str) -> String {
     id.rsplit(['/', '\\'])
         .find(|s| !s.is_empty())
@@ -40,7 +39,6 @@ pub fn file_name_of(id: &str) -> String {
 /// 送らない。main の アップロードループは 1 件ごとに必ず `uploaded` か `new_failed`
 /// のどちらかを増やすので実際には起きないが、起きたとしても報告する事象が無い。
 ///
-/// native 版 `src/notify.rs` と同じ。#17 で native 側を削除する。
 pub fn should_notify(files_found: usize, uploaded: usize, failed: usize) -> bool {
     if files_found == 0 {
         return false;
@@ -55,7 +53,6 @@ pub fn should_notify(files_found: usize, uploaded: usize, failed: usize) -> bool
 /// `failed` の要素は `Entry.id` (local: 絶対パス / SMB: 共有相対パス) なので、
 /// 表示は `file_name_of` を通した basename にする。
 ///
-/// native 版 `src/notify.rs` と同じ。#17 で native 側を削除する。
 pub fn build_message(
     source_label: &str,
     files_found: usize,
@@ -90,14 +87,12 @@ pub fn build_message(
 
 /// JS の `String.length` と同じ数え方 (UTF-16 code unit 数)。
 ///
-/// native 版 `src/notify.rs` と同じ。#17 で native 側を削除する。
 fn utf16_len(s: &str) -> usize {
     s.chars().map(char::len_utf16).sum()
 }
 
 /// UTF-16 長で `max` を超える場合だけ末尾を `…` に置き換えて切り詰める。
 ///
-/// native 版 `src/notify.rs` と同じ。#17 で native 側を削除する。
 fn truncate_utf16(s: &str, max: usize) -> String {
     if utf16_len(s) <= max {
         return s.to_string();

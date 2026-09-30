@@ -1,21 +1,3 @@
-/target
 .claude/settings.local.json
-last_run.txt
-failed_files.txt
-*.log
-google_token_cache.json
-organization_config.json
-client_secret_*.json
 .wrangler/
-.env.build
-
-# WiX build artifacts (wix/main.wxs is tracked; only compiled outputs are excluded)
-target/wix/
-wix/*.wixobj
-wix/*.wixpdb
-
-# Reference repositories
-rust-logi_ref/
-
-# Worker (separate project)
-smb-upload-worker/
+*.log
