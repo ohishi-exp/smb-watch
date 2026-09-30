@@ -1,7 +1,7 @@
-# smb-ingest: SMB 共有の新しいファイルを auth-worker 経由で取り込む cron Worker (Refs ohishi-exp/smb-watch#14)。
+# smb-ingest: SMB 共有の新しいファイルを auth-worker 経由で取り込む cron + Service Binding 専用 POST /run の Worker (Refs ohishi-exp/smb-watch#14)。
 #
 # ★ 外から届く口を持たない:
-#   - fetch ハンドラを持たない (src/lib.rs は #[event(scheduled)] だけ)
+#   - fetch は Service Binding からだけ届く `POST /run` (route・workers.dev なし。同一アカウントで binding を宣言した worker は誰でも叩けるが、効果は run を早めることだけで、tenant は auth-worker の KV 固定)
 #   - workers_dev = false / preview_urls = false、route / routes を書かない、env を作らない
 #   - SMB への口 (vpc_services) はトップレベルにだけ置く
 #   scripts/check-exposure.sh が CI で毎回これを検査する (陰性対照は scripts/check-exposure-test.sh)。

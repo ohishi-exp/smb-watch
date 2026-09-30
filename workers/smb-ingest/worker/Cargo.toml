@@ -1,4 +1,5 @@
-# smb-ingest の Worker 本体 (Refs ohishi-exp/smb-watch#14)。cron (scheduled) だけを持ち、fetch ハンドラは持たない。
+# smb-ingest の Worker 本体 (Refs ohishi-exp/smb-watch#14)。cron (scheduled) と、Service Binding からだけ届く POST /run (fetch) を持つ。
+# fetch は Service Binding からだけ届く `POST /run` (route・workers.dev なし。同一アカウントで binding を宣言した worker は誰でも叩けるが、効果は run を早めることだけで、tenant は auth-worker の KV 固定)。
 # SMB へは Workers VPC の binding SMB_VPC (VPC Service 型) から TCP で繋ぎ、smb2 (feature wasm) で話す。
 # 取り込みと通知は auth-worker の SmbIngestEntrypoint (service binding AUTH_WORKER_INGEST) に RPC で渡す。
 # 判定・文面などの純粋部分は ../logic (smb-ingest-logic) に置く。
