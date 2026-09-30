@@ -12,7 +12,7 @@ impl SmbMount {
     /// Mount the SMB share. Returns SmbMount that can be used to unmount.
     pub fn mount(config: &Config) -> Result<Self> {
         let drive = &config.drive_letter;
-        let unc = format!("\\\\{}\\{}", config.smb_host(), config.smb_share());
+        let unc = format!("\\\\{}\\{}", config.smb_host, config.smb_share);
 
         // Check if already mounted
         if let Ok(current_unc) = query_drive(drive) {

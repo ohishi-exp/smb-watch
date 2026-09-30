@@ -126,18 +126,11 @@ impl FileSource {
             );
         }
 
-        if config.smb_host.is_none() || config.smb_share.is_none() || config.smb_path.is_none() {
-            anyhow::bail!(
-                "--smb-host, --smb-share and --smb-path (or SMB_HOST/SMB_SHARE/SMB_PATH env vars) \
-                 are required for SMB mode (no defaults). Use --local-path for local mode."
-            );
-        }
-
         #[cfg(windows)]
         {
             let mount = crate::smb::SmbMount::mount(config)?;
             // Windows 固有のパス連結 (ドライブレター + バックスラッシュ) はここに閉じ込める。
-            let root = PathBuf::from(format!("{}\\{}", mount.drive_letter, config.smb_path()));
+            let root = PathBuf::from(format!("{}\\{}", mount.drive_letter, config.smb_path));
             Ok(FileSource::Local(LocalFs::mounted(root, mount)))
         }
 

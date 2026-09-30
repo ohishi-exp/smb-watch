@@ -48,8 +48,8 @@ pub fn source_label(config: &Config) -> String {
         return truncate_utf16(&format!("ローカル {}", local.display()), MAX_NAME_UNITS);
     }
 
-    let mut label = config.smb_host().trim().to_string();
-    for seg in [config.smb_share(), config.smb_path()] {
+    let mut label = config.smb_host.trim().to_string();
+    for seg in [config.smb_share.as_str(), config.smb_path.as_str()] {
         let seg = seg.trim().trim_matches(['/', '\\']);
         if seg.is_empty() {
             continue;

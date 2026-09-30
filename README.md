@@ -72,23 +72,12 @@ sudo tail -n3 /var/lib/smb-watch/last_run.txt          # 結果: ... found uploa
 sudo journalctl -u smb-watch.service -n50 --no-pager   # 詳細ログ
 ```
 
-### SMB 接続先の設定
-
-SMB の接続先には既定値がありません(public repo に社内の値を置かないため)。運用ホストの `/etc/smb-watch/smb-watch.env` に `SMB_HOST` / `SMB_SHARE` / `SMB_PATH` を足してください(雛形は `deploy/smb-watch.env.example`)。未設定のまま通常 run すると起動時にエラーで落ちます(`--local-path` と `pair` は不要)。
-
-```sh
-SMB_HOST=<smb-host>
-SMB_SHARE=<共有>
-SMB_PATH=<パス>
-```
-
 ### 直接実行(任意 OS、デバッグ用)
 
 ```sh
 SMB_USER=ユーザー SMB_PASS=パスワード \
 SMB_WATCH_DEVICE_ID=... SMB_WATCH_DEVICE_SECRET=... \
-SMB_HOST=<smb-host> SMB_SHARE=<共有> SMB_PATH=<パス> \
-smb-watch
+smb-watch --smb-host <smb-host> --smb-share <共有> --smb-path <パス>
 ```
 
 接続確認だけなら `--dry-run`(SMB スキャンのみ、認証・アップロードをスキップ)。
@@ -97,9 +86,9 @@ smb-watch
 
 | オプション | デフォルト | 環境変数 | 説明 |
 |---|---|---|---|
-| `--smb-host` | (必須) | `SMB_HOST` | SMB サーバーのホスト名/IP |
-| `--smb-share` | (必須) | `SMB_SHARE` | SMB 共有名 |
-| `--smb-path` | (必須) | `SMB_PATH` | 共有内の監視対象パス(共有ルートなら空文字) |
+| `--smb-host` | `<smb-host>` | - | SMB サーバーのホスト名/IP |
+| `--smb-share` | `<共有>` | - | SMB 共有名 |
+| `--smb-path` | `<パス>` | - | 共有内の監視対象パス |
 | `--smb-user` | - | `SMB_USER` | SMB 接続ユーザー名 |
 | `--smb-pass` | - | `SMB_PASS` | SMB 接続パスワード |
 | `--smb-domain` | `` | `SMB_DOMAIN` | SMB ドメイン名(省略可) |

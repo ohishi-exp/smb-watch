@@ -23,17 +23,17 @@ pub struct Config {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// SMB server hostname or IP (required for SMB mode, no default)
-    #[arg(long, env = "SMB_HOST")]
-    pub smb_host: Option<String>,
+    /// SMB server hostname or IP
+    #[arg(long, default_value = "172.18.21.102")]
+    pub smb_host: String,
 
-    /// SMB share name (required for SMB mode, no default)
-    #[arg(long, env = "SMB_SHARE")]
-    pub smb_share: Option<String>,
+    /// SMB share name
+    #[arg(long, default_value = "共有")]
+    pub smb_share: String,
 
-    /// Subdirectory within the SMB share (required for SMB mode; empty = share root)
-    #[arg(long, env = "SMB_PATH")]
-    pub smb_path: Option<String>,
+    /// Subdirectory within the SMB share
+    #[arg(long, default_value = "新車検証")]
+    pub smb_path: String,
 
     /// SMB username (required for SMB mode, ignored in local mode)
     #[arg(long, env = "SMB_USER")]
@@ -98,20 +98,6 @@ pub struct Config {
 }
 
 /// `smb-watch pair` の引数 (headless device pairing、Issue #1 Phase 2.5)。
-impl Config {
-    pub fn smb_host(&self) -> &str {
-        self.smb_host.as_deref().unwrap_or("")
-    }
-
-    pub fn smb_share(&self) -> &str {
-        self.smb_share.as_deref().unwrap_or("")
-    }
-
-    pub fn smb_path(&self) -> &str {
-        self.smb_path.as_deref().unwrap_or("")
-    }
-}
-
 #[derive(Args, Debug)]
 pub struct PairArgs {
     /// 運用識別用ラベル (auth-worker の承認画面に表示)。空なら "headless device"。

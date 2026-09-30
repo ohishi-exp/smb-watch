@@ -17,14 +17,14 @@ use crate::source::Entry;
 pub struct SmbFs {
     client: smb2::SmbClient,
     tree: smb2::Tree,
-    /// 共有ルートからの走査開始相対パス (例: `<パス>`)。ルート直下なら空文字列。
+    /// 共有ルートからの走査開始相対パス (例: `新車検証`)。ルート直下なら空文字列。
     root: String,
 }
 
 impl SmbFs {
     /// 共有に接続し、tree connect する。
     pub async fn connect(config: &Config) -> Result<Self> {
-        let host = config.smb_host().trim();
+        let host = config.smb_host.trim();
         // host に明示ポートが無ければ SMB 既定の 445 を付ける。
         let addr = if host.contains(':') {
             host.to_string()
@@ -38,7 +38,7 @@ impl SmbFs {
         info!(
             "Connecting to SMB //{}/{} as {}",
             addr,
-            config.smb_share(),
+            config.smb_share,
             if user.is_empty() { "guest" } else { &user }
         );
 
@@ -60,11 +60,11 @@ impl SmbFs {
             .with_context(|| format!("SMB connect to {}", addr))?;
 
         let tree = client
-            .connect_share(config.smb_share())
+            .connect_share(&config.smb_share)
             .await
-            .with_context(|| format!("SMB connect_share '{}'", config.smb_share()))?;
+            .with_context(|| format!("SMB connect_share '{}'", config.smb_share))?;
 
-        let root = config.smb_path().trim_matches(['/', '\\']).to_string();
+        let root = config.smb_path.trim_matches(['/', '\\']).to_string();
         info!("SMB connected, scanning under '{}'", root);
 
         Ok(SmbFs { client, tree, root })

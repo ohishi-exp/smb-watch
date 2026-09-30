@@ -53,20 +53,13 @@ uploader (read → アップロード) が同一 interface でローカル FS / 
   （`SMB_USER` / `SMB_PASS` env、SMB と同一 LAN 内で実行）。
 - `failed_files.txt` の識別子は Linux SMB では共有ルートからの相対パス、ローカルでは絶対パス。
 
-### SMB 接続先の設定（運用ホスト）
-
-SMB の接続先は public repo に値を置かないため既定値なし。運用ホストの `/etc/smb-watch/smb-watch.env` に
-`SMB_HOST=<smb-host>` / `SMB_SHARE=<共有>` / `SMB_PATH=<パス>` を足す（雛形は `deploy/smb-watch.env.example`）。
-未設定で通常 run すると `FileSource::open` が loud fail する（`--local-path` と `pair` は不要）。
-**既定値を消した binary を deploy する前に env へ値を足すこと**（次の timer run が落ちる）。
-
 ### 主な設定パラメータ（CLI / 環境変数）
 
 | パラメータ | デフォルト値 | 環境変数 |
 |---|---|---|
-| `--smb-host` | (必須・既定値なし) | `SMB_HOST` |
-| `--smb-share` | (必須・既定値なし) | `SMB_SHARE` |
-| `--smb-path` | (必須・既定値なし、空=共有ルート) | `SMB_PATH` |
+| `--smb-host` | `<smb-host>` | - |
+| `--smb-share` | `<共有>` | - |
+| `--smb-path` | `<パス>` | - |
 | `--smb-user` | - | `SMB_USER` |
 | `--smb-pass` | - | `SMB_PASS` |
 | `--smb-domain` | `` | `SMB_DOMAIN` |
