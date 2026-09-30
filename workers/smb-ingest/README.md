@@ -9,13 +9,13 @@ Cloudflare Worker (Refs #14)。SMB 共有の新しいファイルを読み、aut
 | パス | 中身 |
 |---|---|
 | `logic/` | crate `smb-ingest-logic`。Worker に依存しない純粋ロジック (通知の判定と文面・差分抽出・since・サイズ上限・lease)。std のみで `cargo test` できる |
-| `worker/` | crate `smb-ingest-worker` (cdylib)。`#[event(scheduled)]` だけを持つ Worker 本体と Durable Object `SmbIngestState` |
+| `worker/` | crate `smb-ingest-worker` (cdylib)。`#[event(scheduled)]` と `#[event(fetch)]` (`POST /run`) を持つ Worker 本体と Durable Object `SmbIngestState` |
 | `scripts/check-exposure.sh` | `worker/wrangler.toml` の公開範囲の検査 (CI で毎回) |
 | `scripts/check-exposure-test.sh` | 上の陰性対照 |
 
 ```text
 cron (平日 JST 9〜17 時の毎正時)
-  └─ smb-ingest (scheduled のみ。fetch ハンドラ無し)
+  └─ smb-ingest (scheduled + Service Binding 専用の fetch `POST /run`)
        ├─ DO SmbIngestState ("state" の 1 つだけ、SQLite): lease / watermark / 失敗一覧
        ├─ SMB_VPC (Workers VPC の VPC Service) ── Tunnel ── 社内の SMB サーバー
        │     smb2 (ohishi-exp/smb2、feature wasm) で NTLM・列挙・read
@@ -68,7 +68,9 @@ JSON が読めない・キーが欠けている・`domain` 以外が空のとき
 - `vars` に `LOCAL_SMB_ADDR` と `LOCAL_SMB_CONFIG_JSON` が無い
 - `service_id` がプレースホルダのままなら warning (fail にはしない)
 
-Worker は fetch ハンドラを持たず、DO はこの Worker の binding からしか届かない。
+fetch は Service Binding からだけ届く `POST /run` (route・workers.dev なし。同一アカウントで binding を宣言した worker は誰でも叩けるが、効果は run を早めることだけで、tenant は auth-worker の KV 固定)。DO はこの Worker の binding からしか届かない。
+
+`POST /run` は lease だけ同期で取る: 保持中なら 409 `{"status":"busy"}`、取れたら run 本体を `ctx.wait_until` に流して 202 `{"status":"accepted","dry_run":<bool>}`、DO 呼び出しの失敗は 500 `{"status":"error","reason":"lease_unavailable"}`。パスが違えば 404、`/run` で POST 以外は 405。`?dry_run=1` で強制 dry-run (無ければ `DRY_RUN` に従う)。応答に件数・ファイル名・共有名・パス・エラーの生文言は入れない。
 `scripts/check-exposure-test.sh` は wrangler.toml を読んだ dict を 1 か所ずつ崩して書き戻し、各検査が exit 1 になることを確かめる。
 
 ## ビルドと検査

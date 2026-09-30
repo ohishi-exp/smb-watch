@@ -1,4 +1,4 @@
-//! smb-ingest: SMB 共有の新しいファイルを auth-worker 経由で取り込む cron Worker (Refs ohishi-exp/smb-watch#14)。
+//! smb-ingest: SMB 共有の新しいファイルを auth-worker 経由で取り込む Worker (cron + Service Binding 専用の `POST /run`) (Refs ohishi-exp/smb-watch#14)。
 //!
 //! 社内の box で systemd timer から動いていた smb-watch (native) の置き換え。1 run の流れ:
 //!
@@ -28,12 +28,14 @@ use std::time::Duration;
 use base64::Engine as _;
 use futures_util::future::{select, Either};
 use smb2::{ClientConfig, SmbClient, Tree};
+use smb_ingest_logic::http::{self, ErrorKind, Reply};
 use smb_ingest_logic::notify::{build_message, file_name_of, should_notify};
 use smb_ingest_logic::plan::{candidates, Entry};
 use smb_ingest_logic::since::resolve_since;
 use smb_ingest_logic::size::too_large;
 use worker::{
-    console_error, console_log, event, Date, Delay, Env, ScheduleContext, ScheduledEvent,
+    console_error, console_log, event, Context, Date, Delay, Env, Request, Response,
+    ScheduleContext, ScheduledEvent,
 };
 
 use crate::ingest::Ingest;
@@ -59,21 +61,83 @@ const FILETIME_UNIX_EPOCH: u64 = 116_444_736_000_000_000;
 
 #[event(scheduled)]
 async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
-    if let Err(e) = run(&env).await {
+    let dry_run = text(&env, "DRY_RUN").as_deref() != Some("0");
+    match acquire(&env).await {
+        Ok(Some(held)) => run(&env, held, dry_run).await,
+        Ok(None) => {}
+        Err(e) => console_error!("smb-ingest: run aborted: {e}"),
+    }
+}
+
+/// fetch は Service Binding からだけ届く `POST /run` (route・workers.dev なし。同一アカウントで binding を
+/// 宣言した worker は誰でも叩けるが、効果は run を早めることだけで、tenant は auth-worker の KV 固定)。
+/// lease だけ同期で取り (保持中なら 409)、取れたら run 本体を `wait_until` で後ろに流して 202 を返す。
+/// 応答に件数・ファイル名・共有名・パス・エラーの生文言を入れない。
+#[event(fetch)]
+async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response> {
+    let url = req.url()?;
+    let route = http::route(req.method().as_ref(), url.path(), url.query());
+    let force_dry_run = match route {
+        http::Route::Run { force_dry_run } => force_dry_run,
+        other => return respond(http::reply_for_unrouted(other).unwrap_or_else(http::busy)),
+    };
+    let dry_run = http::effective_dry_run(text(&env, "DRY_RUN").as_deref(), force_dry_run);
+    match acquire(&env).await {
+        Ok(None) => respond(http::busy()),
+        Ok(Some(held)) => {
+            ctx.wait_until(async move { run(&env, held, dry_run).await });
+            respond(http::accepted(dry_run))
+        }
+        Err(e) => {
+            console_error!("smb-ingest: manual run aborted: {e}");
+            respond(http::error(ErrorKind::LeaseUnavailable))
+        }
+    }
+}
+
+fn respond(reply: Reply) -> worker::Result<Response> {
+    let response = if reply.body.is_empty() {
+        Response::empty()?
+    } else {
+        Response::from_body(worker::ResponseBody::Body(reply.body.into_bytes()))?
+            .with_headers(json_headers())
+    };
+    Ok(response.with_status(reply.status))
+}
+
+fn json_headers() -> worker::Headers {
+    let h = worker::Headers::new();
+    let _ = h.set("content-type", "application/json");
+    h
+}
+
+/// lease を取った run の文脈。
+struct Held {
+    lease: LeaseAcquired,
+    now_ms: u64,
+}
+
+/// lease を取る。保持中なら `None` (ログを残す)。
+async fn acquire(env: &Env) -> worker::Result<Option<Held>> {
+    let now_ms = Date::now().as_millis();
+    let lease: LeaseAcquired = state::call(env, &StateRpc::LeaseAcquire { now_ms }).await?;
+    if lease.state == Lease::Held {
+        console_log!("smb-ingest: another run holds the lease; skipping");
+        return Ok(None);
+    }
+    Ok(Some(Held { lease, now_ms }))
+}
+
+/// lease を取れた後の run 本体。エラーはログに出して終わる。
+async fn run(env: &Env, held: Held, dry_run: bool) {
+    if let Err(e) = run_body(env, held, dry_run).await {
         console_error!("smb-ingest: run aborted: {e}");
     }
 }
 
-async fn run(env: &Env) -> worker::Result<()> {
-    let dry_run = text(env, "DRY_RUN").as_deref() != Some("0");
+async fn run_body(env: &Env, held: Held, dry_run: bool) -> worker::Result<()> {
+    let Held { lease, now_ms } = held;
     let label = text(env, "SOURCE_LABEL").unwrap_or_else(|| "smb-ingest".to_string());
-    let now_ms = Date::now().as_millis();
-
-    let lease: LeaseAcquired = state::call(env, &StateRpc::LeaseAcquire { now_ms }).await?;
-    if lease.state == Lease::Held {
-        console_log!("smb-ingest: another run holds the lease; skipping");
-        return Ok(());
-    }
     let stalled = lease.state == Lease::Expired;
     if stalled {
         console_log!("smb-ingest: previous run left an expired lease (it stopped midway)");
