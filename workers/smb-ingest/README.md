@@ -70,7 +70,7 @@ JSON が読めない・キーが欠けている・`domain` 以外が空のとき
 
 fetch は Service Binding からだけ届く `POST /run` (route・workers.dev なし。同一アカウントで binding を宣言した worker は誰でも叩けるが、効果は run を早めることだけで、tenant は auth-worker の KV 固定)。DO はこの Worker の binding からしか届かない。
 
-`POST /run` は lease だけ同期で取る: 保持中なら 409 `{"status":"busy"}`、取れたら run 本体を `ctx.wait_until` に流して 202 `{"status":"accepted","dry_run":<bool>}`、DO 呼び出しの失敗は 500 `{"status":"error","reason":"lease_unavailable"}`。パスが違えば 404、`/run` で POST 以外は 405。`?dry_run=1` で強制 dry-run (無ければ `DRY_RUN` に従う)。応答に件数・ファイル名・共有名・パス・エラーの生文言は入れない。
+`POST /run` は lease だけ同期で取る: 保持中なら 409 `{"status":"busy"}`、取れたら run 本体を `ctx.wait_until` に流して 202 `{"status":"accepted","dry_run":<bool>}`、DO 呼び出しの失敗は 500 `{"status":"error","reason":"lease_unavailable"}`。パスが違えば 404、`/run` で POST 以外は 405。`?dry_run=1` で強制 dry-run (無ければ `DRY_RUN` に従う)。応答に件数・ファイル名・共有名・パス・エラーの生文言は入れない。`DRY_RUN = "0"` の本番では `?dry_run=1` を付けない `POST /run` は取り込みと通知を行う。
 `scripts/check-exposure-test.sh` は wrangler.toml を読んだ dict を 1 か所ずつ崩して書き戻し、各検査が exit 1 になることを確かめる。
 
 ## ビルドと検査
@@ -115,8 +115,8 @@ auth-worker の binding はローカルに無いので、検証できるのは d
 1. VPC Service (TCP、宛先は社内の SMB サーバーの 445) を作る — 済み (#14)
 2. `worker/wrangler.toml` の `service_id` を入れる PR を merge する — 済み (#14)
 3. Secrets Store の `SMB_INGEST_SMB` (JSON) を入れる — 済み (#14)
-4. `DRY_RUN = "1"` のままタグ `worker-smb-ingest-v*` を打って deploy する (`.github/workflows/worker-smb-ingest.yml`)
-5. 数回ぶんの cron のログ (件数・basename) を box の smb-watch の結果と比較する
-6. box の systemd timer を止める
-7. `INITIAL_SINCE` を box の last_run の最終行の開始時刻にする
-8. `DRY_RUN = "0"` にして deploy する (以後は watermark が since になる)
+4. `DRY_RUN = "1"` のままタグ `worker-smb-ingest-v*` を打って deploy する (`.github/workflows/worker-smb-ingest.yml`) — 済み (#14)
+5. 数回ぶんの cron のログ (件数・basename) を box の smb-watch の結果と比較する — 済み (#14)
+6. box の systemd timer を止める — 済み (#14)
+7. `INITIAL_SINCE` を box の last_run の最終行の開始時刻にする — 済み (#14)
+8. `DRY_RUN = "0"` にして deploy する (以後は watermark が since になる) — 本 PR (タグ `worker-smb-ingest-v0.1.2` で deploy)
