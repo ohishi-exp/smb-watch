@@ -4,7 +4,7 @@ Description=smb-watch を定期実行する (平日 9〜17 時 JST、毎正時�
 [Timer]
 # 平日 (月〜金) の 9:00〜17:00 JST を毎正時に実行 = 1 日 9 回 (JST 9,10,…,17 時)。
 #
-# OnCalendar はホスト TZ で解釈される。ohishi-data は **host TZ = UTC** 運用で、
+# OnCalendar はホスト TZ で解釈される。<運用ホスト> は **host TZ = UTC** 運用で、
 # 他に時刻依存の cron (backup / update_ichi) があるため host TZ は変更しない。
 # JST 9〜17 時 = UTC 0〜8 時 (曜日も Mon-Fri で一致) なので、ここは **UTC で記述**する。
 # = JST 9:00→UTC 0:00 / JST 17:00→UTC 8:00。host TZ を JST にした場合はこの値を

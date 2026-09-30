@@ -4,14 +4,14 @@
 //! 1 ファイル read が通ることを **実機 (SMB と同一 LAN 内)** で確認する。
 //! ここで SMB dialect / 認証方式が合わなければ crate を `smb` (sspi ベース) に切替える。
 //!
-//! CCoW / LAN 外からは対象サーバ (172.18.21.102) に到達できないため、手元の
+//! CCoW / LAN 外からは対象サーバ (<smb-host>) に到達できないため、手元の
 //! LAN 内マシンで実行すること。
 //!
 //! 使い方:
 //! ```sh
 //! SMB_USER=xxx SMB_PASS=yyy \
 //!   cargo run --example smb_probe -- \
-//!   --smb-host 172.18.21.102 --smb-share 共有 --smb-path 新車検証
+//!   --smb-host <smb-host> --smb-share <共有> --smb-path <パス>
 //! # 任意: --smb-domain WORKGROUP  RUST_LOG=smb2=debug で wire ログ
 //! ```
 
@@ -34,18 +34,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- 引数 / env ---
     let args: Vec<String> = std::env::args().collect();
-    let arg = |name: &str, default: &str| -> String {
+    let arg = |name: &str, default: Option<&str>| -> String {
         args.iter()
             .position(|a| a == name)
             .and_then(|i| args.get(i + 1))
             .cloned()
-            .unwrap_or_else(|| default.to_string())
+            .or_else(|| default.map(str::to_string))
+            .unwrap_or_else(|| {
+                eprintln!("{} は必須です (既定値なし)。", name);
+                std::process::exit(2);
+            })
     };
 
-    let host = arg("--smb-host", "172.18.21.102");
-    let share = arg("--smb-share", "共有");
-    let path = arg("--smb-path", "新車検証");
-    let domain = arg("--smb-domain", "");
+    let host = arg("--smb-host", None);
+    let share = arg("--smb-share", None);
+    let path = arg("--smb-path", None);
+    let domain = arg("--smb-domain", Some(""));
     let user = std::env::var("SMB_USER").unwrap_or_else(|_| {
         eprintln!("SMB_USER / SMB_PASS env vars が必要です。");
         std::process::exit(2);

@@ -26,10 +26,10 @@ smb-watch (box)
 
 ### Linux(主用途)
 
-- **自動**: `ippoan`/`ohishi-exp` の CI が `main` への merge で musl static binary を `ohishi-data:/opt/smb-watch/smb-watch` に自動デプロイします(運用ホスト)。
+- **自動**: `ippoan`/`ohishi-exp` の CI が `main` への merge で musl static binary を `<運用ホスト>:/opt/smb-watch/smb-watch` に自動デプロイします(運用ホスト)。
 - **手動**: [GitHub Releases](https://github.com/ohishi-exp/smb-watch/releases) の `smb-watch-<tag>-x86_64-unknown-linux-musl` を配置するか、ローカルで `cargo build --release --target x86_64-unknown-linux-musl`。
 
-systemd 構成(`service`/`timer`/`path`)の配置手順は [CLAUDE.md](./CLAUDE.md) の「systemd 構成」「ohishi-data 運用メモ」を参照。
+systemd 構成(`service`/`timer`/`path`)の配置手順は [CLAUDE.md](./CLAUDE.md) の「systemd 構成」「<運用ホスト> 運用メモ」を参照。
 
 ### Windows
 
@@ -41,7 +41,7 @@ systemd 構成(`service`/`timer`/`path`)の配置手順は [CLAUDE.md](./CLAUDE.
 
 ```sh
 # Linux (例)
-sudo /opt/smb-watch/smb-watch pair --label ohishi-data --env-out /etc/smb-watch/smb-watch.env
+sudo /opt/smb-watch/smb-watch pair --label <運用ホスト> --env-out /etc/smb-watch/smb-watch.env
 ```
 
 実行すると承認 URL と確認コードが表示されます:
@@ -77,7 +77,7 @@ sudo journalctl -u smb-watch.service -n50 --no-pager   # 詳細ログ
 ```sh
 SMB_USER=ユーザー SMB_PASS=パスワード \
 SMB_WATCH_DEVICE_ID=... SMB_WATCH_DEVICE_SECRET=... \
-smb-watch --smb-host 172.18.21.102 --smb-share 共有 --smb-path 新車検証
+smb-watch --smb-host <smb-host> --smb-share <共有> --smb-path <パス>
 ```
 
 接続確認だけなら `--dry-run`(SMB スキャンのみ、認証・アップロードをスキップ)。
@@ -86,9 +86,9 @@ smb-watch --smb-host 172.18.21.102 --smb-share 共有 --smb-path 新車検証
 
 | オプション | デフォルト | 環境変数 | 説明 |
 |---|---|---|---|
-| `--smb-host` | `172.18.21.102` | - | SMB サーバーのホスト名/IP |
-| `--smb-share` | `共有` | - | SMB 共有名 |
-| `--smb-path` | `新車検証` | - | 共有内の監視対象パス |
+| `--smb-host` | `<smb-host>` | - | SMB サーバーのホスト名/IP |
+| `--smb-share` | `<共有>` | - | SMB 共有名 |
+| `--smb-path` | `<パス>` | - | 共有内の監視対象パス |
 | `--smb-user` | - | `SMB_USER` | SMB 接続ユーザー名 |
 | `--smb-pass` | - | `SMB_PASS` | SMB 接続パスワード |
 | `--smb-domain` | `` | `SMB_DOMAIN` | SMB ドメイン名(省略可) |
